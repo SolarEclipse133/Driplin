@@ -24,47 +24,61 @@ async function requireOrg() {
   return { supabase, orgId: profile?.org_id ?? null };
 }
 
-/** Step 1 of the Rachio flow: validate and store the org's API key. */
-export async function saveRachioKey(
+type ConnectableVendor = "rachio" | "hydrawise";
+const VENDOR_NAMES: Record<ConnectableVendor, string> = {
+  rachio: "Rachio",
+  hydrawise: "Hydrawise",
+};
+
+/** Step 1 of the connect flow: validate and store the org's API key. */
+export async function saveVendorKey(
+  vendor: ConnectableVendor,
   propertyId: string,
   _prev: ConnectFormState,
   formData: FormData
 ): Promise<ConnectFormState> {
   const apiKey = String(formData.get("api_key") ?? "").trim();
-  if (!apiKey) return { error: "Please paste your Rachio API key.", success: null };
+  if (!apiKey)
+    return {
+      error: `Please paste your ${VENDOR_NAMES[vendor]} API key.`,
+      success: null,
+    };
 
   const { supabase, orgId } = await requireOrg();
   if (!orgId) return { error: "You are no longer signed in.", success: null };
 
   let accountLabel: string;
   try {
-    accountLabel = await getAccountClient("rachio", apiKey).validateKey();
+    accountLabel = await getAccountClient(vendor, apiKey).validateKey();
   } catch (err) {
     return {
       error:
         err instanceof ControllerError
           ? err.message
-          : "Could not validate the key with Rachio.",
+          : `Could not validate the key with ${VENDOR_NAMES[vendor]}.`,
       success: null,
     };
   }
 
   const { error } = await supabase
     .from("vendor_credentials")
-    .upsert({ org_id: orgId, vendor: "rachio", api_key: apiKey }, { onConflict: "org_id,vendor" });
+    .upsert({ org_id: orgId, vendor, api_key: apiKey }, { onConflict: "org_id,vendor" });
   if (error) return { error: "Could not store the key.", success: null };
 
   revalidatePath(`/properties/${propertyId}`);
-  return { error: null, success: `Connected to Rachio account ${accountLabel}.` };
+  return { error: null, success: `Connected: ${accountLabel}.` };
 }
 
-/** Step 2: link one device from the Rachio account to this property. */
-export async function connectRachioDevice(
+/** Step 2: link one device from the vendor account to this property. */
+export async function connectVendorDevice(
+  vendor: ConnectableVendor,
   propertyId: string,
   formData: FormData
 ): Promise<void> {
   const deviceId = String(formData.get("device_id") ?? "");
-  const deviceName = String(formData.get("device_name") ?? "Rachio controller");
+  const deviceName = String(
+    formData.get("device_name") ?? `${VENDOR_NAMES[vendor]} controller`
+  );
   if (!deviceId) return;
 
   const { supabase, orgId } = await requireOrg();
@@ -75,7 +89,7 @@ export async function connectRachioDevice(
     .insert({
       org_id: orgId,
       property_id: propertyId,
-      vendor: "rachio",
+      vendor,
       vendor_device_id: deviceId,
       name: deviceName,
     })

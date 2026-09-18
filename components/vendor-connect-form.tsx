@@ -3,13 +3,18 @@
 import { useActionState } from "react";
 import type { ConnectFormState } from "@/app/(app)/properties/[id]/controller-actions";
 
-export function RachioConnectForm({
+/** Shared API-key form for connecting a vendor account (Rachio, Hydrawise). */
+export function VendorConnectForm({
   action,
+  vendorLabel,
+  keyHint,
 }: {
   action: (
     prev: ConnectFormState,
     formData: FormData
   ) => Promise<ConnectFormState>;
+  vendorLabel: string;
+  keyHint: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     error: null,
@@ -19,20 +24,22 @@ export function RachioConnectForm({
   return (
     <form action={formAction} className="mt-3 space-y-3" noValidate>
       <div>
-        <label htmlFor="api_key" className="block text-sm font-medium">
-          Rachio API key
+        <label
+          htmlFor={`api_key_${vendorLabel}`}
+          className="block text-sm font-medium"
+        >
+          {vendorLabel} API key
         </label>
         <input
-          id="api_key"
+          id={`api_key_${vendorLabel}`}
           name="api_key"
           type="password"
           autoComplete="off"
-          placeholder="Paste the key from app.rach.io → Account Settings"
+          placeholder={keyHint}
           className="mt-1 w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
         <p className="mt-1 text-xs text-slate-500">
-          Found in the Rachio app: Account Settings → GET API KEY. Stored
-          once for your whole company.
+          {keyHint}. Stored once for your whole company.
         </p>
       </div>
 

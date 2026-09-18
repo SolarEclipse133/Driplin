@@ -4,12 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getWateringDigit } from "@/lib/rules/address";
 import { getAccountClient } from "@/lib/controllers/factory";
 import { ControllerError, ScheduleProgram, WEEKDAYS } from "@/lib/controllers/types";
-import { RachioConnectForm } from "@/components/rachio-connect-form";
+import { VendorConnectForm } from "@/components/vendor-connect-form";
 import {
   addDemoController,
-  connectRachioDevice,
+  connectVendorDevice,
   removeController,
-  saveRachioKey,
+  saveVendorKey,
   syncController,
 } from "./controller-actions";
 
@@ -61,31 +61,51 @@ export default async function PropertyDetailPage({
     .eq("property_id", id)
     .order("created_at");
 
-  // If the org has a Rachio key, list devices that could be connected.
-  const { data: rachioCred } = await supabase
-    .from("vendor_credentials")
-    .select("api_key")
-    .eq("vendor", "rachio")
-    .maybeSingle();
+  // For each connectable vendor: does the org have a key, and if so,
+  // which of that account's devices aren't connected here yet?
+  const CONNECTABLE = [
+    {
+      vendor: "rachio" as const,
+      label: "Rachio",
+      keyHint: "Found in app.rach.io → Account Settings → GET API KEY",
+    },
+    {
+      vendor: "hydrawise" as const,
+      label: "Hydrawise",
+      keyHint:
+        "Found in the Hydrawise app → Account Details → Generate API Key",
+    },
+  ];
 
-  let rachioDevices: { vendorDeviceId: string; name: string }[] | null = null;
-  let rachioError: string | null = null;
-  if (rachioCred?.api_key) {
-    try {
-      const all = await getAccountClient("rachio", rachioCred.api_key).listDevices();
-      const connectedIds = new Set(
-        (controllers ?? [])
-          .filter((c) => c.vendor === "rachio")
-          .map((c) => c.vendor_device_id)
-      );
-      rachioDevices = all.filter((d) => !connectedIds.has(d.vendorDeviceId));
-    } catch (err) {
-      rachioError =
-        err instanceof ControllerError
-          ? err.message
-          : "Could not reach Rachio right now.";
-    }
-  }
+  const vendorSections = await Promise.all(
+    CONNECTABLE.map(async (v) => {
+      const { data: cred } = await supabase
+        .from("vendor_credentials")
+        .select("api_key")
+        .eq("vendor", v.vendor)
+        .maybeSingle();
+
+      let devices: { vendorDeviceId: string; name: string }[] | null = null;
+      let apiError: string | null = null;
+      if (cred?.api_key) {
+        try {
+          const all = await getAccountClient(v.vendor, cred.api_key).listDevices();
+          const connectedIds = new Set(
+            (controllers ?? [])
+              .filter((c) => c.vendor === v.vendor)
+              .map((c) => c.vendor_device_id)
+          );
+          devices = all.filter((d) => !connectedIds.has(d.vendorDeviceId));
+        } catch (err) {
+          apiError =
+            err instanceof ControllerError
+              ? err.message
+              : `Could not reach ${v.label} right now.`;
+        }
+      }
+      return { ...v, hasCredential: !!cred?.api_key, devices, apiError };
+    })
+  );
 
   return (
     <div>
@@ -239,47 +259,66 @@ export default async function PropertyDetailPage({
         })}
       </div>
 
-      {/* Connect Rachio */}
-      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold">Connect a Rachio controller</h3>
-        {!rachioCred && (
-          <RachioConnectForm action={saveRachioKey.bind(null, property.id)} />
-        )}
-        {rachioCred && rachioError && (
-          <p
-            role="alert"
-            className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
-          >
-            {rachioError}
-          </p>
-        )}
-        {rachioCred && !rachioError && (rachioDevices?.length ?? 0) === 0 && (
-          <p className="mt-3 text-sm text-slate-500">
-            Your Rachio account is connected, but no (further) controllers
-            were found on it. Devices appear here as soon as they are added
-            to the Rachio account.
-          </p>
-        )}
-        {rachioCred && (rachioDevices?.length ?? 0) > 0 && (
-          <ul className="mt-3 space-y-2">
-            {rachioDevices!.map((d) => (
-              <li
-                key={d.vendorDeviceId}
-                className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2"
-              >
-                <span className="text-sm font-medium">{d.name}</span>
-                <form action={connectRachioDevice.bind(null, property.id)}>
-                  <input type="hidden" name="device_id" value={d.vendorDeviceId} />
-                  <input type="hidden" name="device_name" value={d.name} />
-                  <button className="rounded-md bg-sky-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-800">
-                    Connect
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* Connect vendor controllers */}
+      {vendorSections.map((v) => (
+        <div
+          key={v.vendor}
+          className="mt-8 rounded-xl border border-slate-200 bg-white p-4"
+        >
+          <h3 className="font-semibold">Connect a {v.label} controller</h3>
+          {!v.hasCredential && (
+            <VendorConnectForm
+              action={saveVendorKey.bind(null, v.vendor, property.id)}
+              vendorLabel={v.label}
+              keyHint={v.keyHint}
+            />
+          )}
+          {v.hasCredential && v.apiError && (
+            <p
+              role="alert"
+              className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {v.apiError}
+            </p>
+          )}
+          {v.hasCredential && !v.apiError && (v.devices?.length ?? 0) === 0 && (
+            <p className="mt-3 text-sm text-slate-500">
+              Your {v.label} account is connected, but no (further)
+              controllers were found on it. Devices appear here as soon as
+              they are added to the {v.label} account.
+            </p>
+          )}
+          {v.hasCredential && (v.devices?.length ?? 0) > 0 && (
+            <ul className="mt-3 space-y-2">
+              {v.devices!.map((d) => (
+                <li
+                  key={d.vendorDeviceId}
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2"
+                >
+                  <span className="text-sm font-medium">{d.name}</span>
+                  <form
+                    action={connectVendorDevice.bind(
+                      null,
+                      v.vendor,
+                      property.id
+                    )}
+                  >
+                    <input
+                      type="hidden"
+                      name="device_id"
+                      value={d.vendorDeviceId}
+                    />
+                    <input type="hidden" name="device_name" value={d.name} />
+                    <button className="rounded-md bg-sky-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-800">
+                      Connect
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
 
       {/* Board report */}
       <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">

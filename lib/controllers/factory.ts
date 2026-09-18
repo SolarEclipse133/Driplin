@@ -52,7 +52,9 @@ export function getController(
         throw new ControllerError("Rachio API key is missing for this org.");
       return new RachioController(deps.apiKey, row.vendor_device_id);
     case "hydrawise":
-      return new HydrawiseController();
+      if (!deps.apiKey)
+        throw new ControllerError("Hydrawise API key is missing for this org.");
+      return new HydrawiseController(deps.apiKey, row.vendor_device_id, row.name);
     case "demo":
       if (!deps.supabase)
         throw new ControllerError("Demo controller needs a database client.");
