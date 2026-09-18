@@ -20,6 +20,7 @@ import { syncControllerById } from "@/lib/controllers/sync";
 import { getWateringDigit } from "./address";
 import { DroughtStage } from "./watering-config";
 import { evaluateCompliance } from "./compliance";
+import { estimateWeeklySavings } from "./savings";
 
 export interface OrgComplianceSummary {
   checked: number;
@@ -158,6 +159,7 @@ export async function runComplianceForOrg(
           compliance_checked_at: new Date().toISOString(),
         })
         .eq("id", c.id);
+      const savings = estimateWeeklySavings(programs, result.correctedPrograms);
       await supabase.from("compliance_events").insert({
         org_id: c.org_id,
         property_id: property.id,
@@ -167,6 +169,8 @@ export async function runComplianceForOrg(
         details: {
           correctedPrograms: result.correctedPrograms,
           rules: result.rulesSnapshot,
+          estimatedWeeklyMinutesSaved: savings.minutesSaved,
+          estimatedWeeklyGallonsSaved: savings.gallonsSaved,
         },
       });
       await supabase.from("alerts").insert({
