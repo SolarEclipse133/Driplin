@@ -50,7 +50,10 @@ export async function sendEmail(
 ): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { status: "logged" };
-  const from = process.env.RESEND_FROM ?? "Driplin <onboarding@resend.dev>";
+  // Truthy check, not ??: an env var present-but-empty (easy to do in a
+  // hosting dashboard) would otherwise become an empty From address,
+  // which Resend rejects with a confusing "domain is invalid".
+  const from = process.env.RESEND_FROM || "Driplin <onboarding@resend.dev>";
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
