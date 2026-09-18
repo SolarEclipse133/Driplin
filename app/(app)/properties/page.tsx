@@ -62,10 +62,10 @@ export default async function PropertiesPage() {
                   Watering digit: {getWateringDigit(p.street_number) ?? "?"}
                 </span>
                 <Link
-                  href={`/properties/${p.id}/edit`}
+                  href={`/properties/${p.id}`}
                   className="text-sm font-medium text-sky-700 hover:underline"
                 >
-                  Edit
+                  Manage
                 </Link>
               </div>
             </li>

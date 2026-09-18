@@ -54,6 +54,11 @@ Supabase hosts the database and handles passwords.
 2. Click your account icon → **Account Settings** → **GET API KEY**.
 3. Copy the key → `RACHIO_API_KEY`.
 
+Note: property managers don't need this — they paste their own company's
+Rachio key into the app when connecting their first controller (Property →
+Connect a Rachio controller). The env var is only a convenience for
+development/testing.
+
 ## 3. Hydrawise (needed for feature 8 — later)
 
 Once Hunter approves your API access: Hydrawise account → **Account
