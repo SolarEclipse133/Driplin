@@ -31,6 +31,14 @@ export interface StageRule {
    * instead. Pushing a wrong schedule is worse than pushing none.
    */
   verified: boolean;
+  /**
+   * True when we do not know this city's day assignment at all (e.g. the
+   * city publishes it only as an image). Driplin then makes no
+   * compliance judgement and no schedule change: the property is shown
+   * as unverified with a pointer to the city's page. Guessing a day
+   * would be worse than admitting we don't know it.
+   */
+  scheduleUnknown?: boolean;
 }
 
 export interface IndicatorReading {

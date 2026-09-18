@@ -6,11 +6,22 @@
 
 import { AUSTIN } from "./austin";
 import { SAN_ANTONIO } from "./san-antonio";
+import { ROUND_ROCK } from "./round-rock";
+import { GEORGETOWN } from "./georgetown";
+import { CEDAR_PARK } from "./cedar-park";
+import { LEANDER } from "./leander";
 import { DroughtStage, Jurisdiction, StageRule } from "./types";
 
 export * from "./types";
 
-export const JURISDICTIONS: Jurisdiction[] = [AUSTIN, SAN_ANTONIO];
+export const JURISDICTIONS: Jurisdiction[] = [
+  AUSTIN,
+  SAN_ANTONIO,
+  ROUND_ROCK,
+  GEORGETOWN,
+  CEDAR_PARK,
+  LEANDER,
+];
 
 export const DEFAULT_JURISDICTION_ID = AUSTIN.id;
 

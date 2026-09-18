@@ -30,6 +30,14 @@ export interface ComplianceResult {
    * auto-push in that case — a wrong schedule is worse than none.
    */
   rulesVerified: boolean;
+  /**
+   * False when we don't know this city's watering-day assignment at
+   * all. No compliance judgement is made; the property is reported as
+   * unverified with a pointer to the city's published schedule.
+   */
+  certified: boolean;
+  /** Where a manager checks the real schedule when we can't certify. */
+  officialUrl: string;
   /** Snapshot for the audit log. */
   rulesSnapshot: {
     jurisdictionId: string;
@@ -79,6 +87,35 @@ export function evaluateCompliance(
   const jurisdiction = getJurisdiction(jurisdictionId);
   const rule = jurisdiction.stages[stage];
   const allowedDays = rule.daysByDigit[digit] ?? [];
+
+  const snapshot = {
+    jurisdictionId: jurisdiction.id,
+    jurisdictionName: jurisdiction.name,
+    utility: jurisdiction.utility,
+    stage,
+    stageName: rule.name,
+    digit,
+    allowedDays,
+    allowedWindows: rule.allowedWindows,
+    verified: rule.verified,
+  };
+
+  // We don't know this city's day assignment — say so plainly rather
+  // than judging the schedule against a guess.
+  if (rule.scheduleUnknown) {
+    return {
+      compliant: false,
+      certified: false,
+      rulesVerified: false,
+      officialUrl: jurisdiction.officialUrl,
+      findings: [],
+      correctedPrograms: programs,
+      manualInstructions: [
+        `Check this property's assigned watering day and hours for ${rule.name} at ${jurisdiction.officialUrl}, then confirm the controller matches.`,
+      ],
+      rulesSnapshot: snapshot,
+    };
+  }
   const findings: ProgramFinding[] = [];
   const corrected: ScheduleProgram[] = [];
   const manual: string[] = [];
@@ -155,20 +192,12 @@ export function evaluateCompliance(
 
   return {
     compliant: findings.length === 0,
+    certified: true,
+    rulesVerified: rule.verified,
+    officialUrl: jurisdiction.officialUrl,
     findings,
     correctedPrograms: corrected,
     manualInstructions: manual,
-    rulesVerified: rule.verified,
-    rulesSnapshot: {
-      jurisdictionId: jurisdiction.id,
-      jurisdictionName: jurisdiction.name,
-      utility: jurisdiction.utility,
-      stage,
-      stageName: rule.name,
-      digit,
-      allowedDays,
-      allowedWindows: rule.allowedWindows,
-      verified: rule.verified,
-    },
+    rulesSnapshot: snapshot,
   };
 }

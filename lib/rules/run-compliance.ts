@@ -93,6 +93,36 @@ export async function runComplianceForOrg(
     const stage = stageByJurisdiction.get(jurisdictionId) ?? 0;
     const result = evaluateCompliance(programs, digit, stage, jurisdictionId);
 
+    // Cities whose published schedule we haven't been able to confirm:
+    // report honestly instead of judging against a guess.
+    if (!result.certified) {
+      await supabase
+        .from("controllers")
+        .update({
+          compliance_status: "unknown",
+          compliance_detail: {
+            rules: result.rulesSnapshot,
+            uncertified: true,
+            manualInstructions: result.manualInstructions,
+            officialUrl: result.officialUrl,
+          },
+          compliance_checked_at: new Date().toISOString(),
+        })
+        .eq("id", c.id);
+      await supabase.from("compliance_events").insert({
+        org_id: c.org_id,
+        property_id: property.id,
+        controller_id: c.id,
+        type: "check",
+        summary: `${result.rulesSnapshot.jurisdictionName}'s published watering schedule is not yet confirmed in Driplin, so this controller was not evaluated.`,
+        details: {
+          rules: result.rulesSnapshot,
+          officialUrl: result.officialUrl,
+        },
+      });
+      continue;
+    }
+
     await supabase.from("compliance_events").insert({
       org_id: c.org_id,
       property_id: property.id,
