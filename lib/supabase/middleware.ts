@@ -11,6 +11,13 @@ import { NextResponse, type NextRequest } from "next/server";
 const PUBLIC_PATHS = ["/login", "/signup"];
 
 export async function updateSession(request: NextRequest) {
+  // Cron endpoints authenticate with CRON_SECRET inside the route
+  // itself (Vercel's scheduler has no session cookie) — redirecting
+  // them to the login page would silently break the nightly job.
+  if (request.nextUrl.pathname.startsWith("/api/cron/")) {
+    return NextResponse.next({ request });
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
