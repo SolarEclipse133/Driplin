@@ -28,6 +28,8 @@ export interface OrgComplianceSummary {
   compliant: number;
   corrected: number;
   needsManualFix: number;
+  /** Controllers in cities whose published schedule we can't confirm. */
+  uncertified: number;
   errors: string[];
 }
 
@@ -40,6 +42,7 @@ export async function runComplianceForOrg(
     compliant: 0,
     corrected: 0,
     needsManualFix: 0,
+    uncertified: 0,
     errors: [],
   };
 
@@ -96,6 +99,7 @@ export async function runComplianceForOrg(
     // Cities whose published schedule we haven't been able to confirm:
     // report honestly instead of judging against a guess.
     if (!result.certified) {
+      summary.uncertified += 1;
       await supabase
         .from("controllers")
         .update({

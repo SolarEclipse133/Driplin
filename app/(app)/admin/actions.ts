@@ -153,7 +153,7 @@ export async function confirmStage(
 
   return {
     error: null,
-    success: `${jurisdiction.name} is now confirmed at ${jurisdiction.stages[stage].name}. Compliance re-run for your org: ${summary.checked} controller(s) checked, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix. Other orgs update on the nightly run.${unverifiedNote}`,
+    success: `${jurisdiction.name} is now confirmed at ${jurisdiction.stages[stage].name}. Compliance re-run for your org: ${summary.checked} controller(s) checked, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix${summary.uncertified > 0 ? `, ${summary.uncertified} not evaluated (city schedule unconfirmed)` : ""}. Other orgs update on the nightly run.${unverifiedNote}`,
   };
 }
 

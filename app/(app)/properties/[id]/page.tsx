@@ -222,6 +222,23 @@ export default async function PropertyDetailPage({
                   No watering programs found on this controller.
                 </p>
               )}
+              {(c.compliance_detail as { uncertified?: boolean } | null)
+                ?.uncertified && (
+                <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-sm font-semibold text-slate-700">
+                    Driplin hasn&apos;t confirmed this city&apos;s published
+                    watering schedule yet, so it is not judging or changing
+                    this controller.
+                  </p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-600">
+                    {((c.compliance_detail as {
+                      manualInstructions?: string[];
+                    } | null)?.manualInstructions ?? []).map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               {c.compliance_status === "needs_manual_fix" && (
                 <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
                   <p className="text-sm font-semibold text-amber-900">
