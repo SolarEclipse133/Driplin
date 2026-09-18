@@ -94,6 +94,40 @@ uses a built-in simulated Hydrawise controller, so nothing is needed now.
 
 ---
 
+## Deploying to Vercel (the live site)
+
+1. Create a free account at https://vercel.com — choose **Continue with
+   GitHub** so it can see your repositories.
+2. Click **Add New… → Project**, find **Driplin** in the repository list,
+   and click **Import**. (If it isn't listed, click "Adjust GitHub App
+   Permissions" and grant access to the Driplin repository.)
+3. Leave every build setting at its default — Vercel detects Next.js
+   automatically. Before clicking Deploy, open the
+   **Environment Variables** section and add these (names exactly as
+   shown; where each value comes from is in the sections above):
+
+   | Name | Value |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | your Supabase project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the anon/publishable key |
+   | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key (secret — this is its proper home) |
+   | `CRON_SECRET` | a random password — generate at https://generate-secret.vercel.app/32 |
+   | `ADMIN_ALERT_EMAIL` | your email, for LCRA threshold alerts |
+
+   Optional, for turning on real notifications later: `RESEND_API_KEY`,
+   `RESEND_FROM`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `TWILIO_FROM_NUMBER`. Leave them out for log-only mode.
+   (`RACHIO_API_KEY` is not needed in Vercel — managers paste their
+   company's key into the app itself.)
+4. Click **Deploy**. After a minute or two you get a URL like
+   `driplin-xyz.vercel.app` — that's the live app. The nightly LCRA
+   cron job (defined in `vercel.json`) activates automatically.
+5. After any future code push to the repository's main branch, Vercel
+   redeploys on its own.
+6. When real users are about to sign up: turn Supabase's
+   **Confirm email** setting back on (Authentication → Sign In /
+   Providers → Email) so accounts must verify their address.
+
 ## Running the app on your own computer (optional)
 
 1. Install Node.js (LTS version) from https://nodejs.org.

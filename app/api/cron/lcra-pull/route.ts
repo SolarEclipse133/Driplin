@@ -4,8 +4,9 @@ import { runLcraCheck } from "@/lib/lcra/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 
 export const dynamic = "force-dynamic";
-// The nightly run can take a while when many controllers need syncing.
-export const maxDuration = 300;
+// 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
+// upgrading if the nightly run ever grows past it.
+export const maxDuration = 60;
 
 /**
  * Nightly job (Vercel Cron, see vercel.json):
