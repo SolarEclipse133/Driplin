@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { PropertyFormState } from "@/app/(app)/properties/actions";
+import { JURISDICTIONS } from "@/lib/jurisdictions";
 
 type PropertyValues = {
   name: string;
@@ -11,6 +12,7 @@ type PropertyValues = {
   city: string;
   zip: string;
   unit_count: number | "";
+  jurisdiction: string;
 };
 
 const EMPTY: PropertyValues = {
@@ -20,6 +22,7 @@ const EMPTY: PropertyValues = {
   city: "Austin",
   zip: "",
   unit_count: "",
+  jurisdiction: "austin",
 };
 
 export function PropertyForm({
@@ -93,6 +96,35 @@ export function PropertyForm({
         min: 1,
         placeholder: "24",
       })}
+
+      <div>
+        <label htmlFor="jurisdiction" className="block text-sm font-medium">
+          Watering rules apply from
+        </label>
+        <select
+          id="jurisdiction"
+          name="jurisdiction"
+          value={values.jurisdiction}
+          onChange={(e) =>
+            setValues((v) => ({ ...v, jurisdiction: e.target.value }))
+          }
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        >
+          {JURISDICTIONS.map((j) => (
+            <option key={j.id} value={j.id}>
+              {j.name} — {j.utility}
+            </option>
+          ))}
+        </select>
+        {state.fieldErrors.jurisdiction && (
+          <p className="mt-1 text-sm text-red-700">
+            {state.fieldErrors.jurisdiction}
+          </p>
+        )}
+        <p className="mt-1 text-xs text-slate-500">
+          The utility whose drought restrictions this property must follow.
+        </p>
+      </div>
 
       {state.error && (
         <p

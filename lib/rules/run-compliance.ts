@@ -19,7 +19,7 @@ import {
 import { syncControllerById } from "@/lib/controllers/sync";
 import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { getWateringDigit } from "./address";
-import { DroughtStage } from "./watering-config";
+import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
 import { estimateWeeklySavings } from "./savings";
 
@@ -43,16 +43,21 @@ export async function runComplianceForOrg(
     errors: [],
   };
 
-  const { data: status } = await supabase
+  // Confirmed stage per city — a portfolio can span jurisdictions.
+  const { data: stageRows } = await supabase
     .from("drought_stage_status")
-    .select("current_stage")
-    .single();
-  const stage = (status?.current_stage ?? 0) as DroughtStage;
+    .select("jurisdiction, current_stage");
+  const stageByJurisdiction = new Map<string, DroughtStage>(
+    (stageRows ?? []).map((r) => [
+      r.jurisdiction as string,
+      (r.current_stage ?? 0) as DroughtStage,
+    ])
+  );
 
   const { data: controllers, error } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number)"
+      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction)"
     )
     .eq("org_id", orgId);
   if (error) {
@@ -83,8 +88,10 @@ export async function runComplianceForOrg(
       continue;
     }
 
-    // 2. Evaluate against the confirmed stage.
-    const result = evaluateCompliance(programs, digit, stage);
+    // 2. Evaluate against the confirmed stage for THIS property's city.
+    const jurisdictionId = property.jurisdiction ?? "austin";
+    const stage = stageByJurisdiction.get(jurisdictionId) ?? 0;
+    const result = evaluateCompliance(programs, digit, stage, jurisdictionId);
 
     await supabase.from("compliance_events").insert({
       org_id: c.org_id,
@@ -135,6 +142,16 @@ export async function runComplianceForOrg(
     }
 
     try {
+      // Safety rule: never push a schedule derived from rules we have
+      // not verified against the city's published ordinance. Flag it
+      // for a human instead — a wrong schedule is worse than none.
+      if (!result.rulesVerified) {
+        throw new ScheduleWriteNotSupportedError(
+          c.vendor as ControllerVendor,
+          `Driplin has not verified ${getJurisdiction(jurisdictionId).utility}'s published rules for ${result.rulesSnapshot.stageName}, so it will not change this schedule automatically`
+        );
+      }
+
       const impl = getController(
         {
           id: c.id,

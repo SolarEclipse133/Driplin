@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { runLcraCheck } from "@/lib/lcra/check";
+import { runIndicatorCheck } from "@/lib/indicators/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
-import { DroughtStage, STAGE_NAMES } from "@/lib/rules/watering-config";
+import {
+  ALL_STAGES,
+  DroughtStage,
+  getJurisdiction,
+  JURISDICTIONS,
+} from "@/lib/jurisdictions";
 
 export type AdminActionState = { error: string | null; success: string | null };
 
@@ -23,15 +28,25 @@ async function requireAdmin() {
   return { supabase, admin: profile };
 }
 
-/** Manual trigger of the same check the nightly cron runs. */
-export async function pullLcraNow(
+function validJurisdiction(id: string): boolean {
+  return JURISDICTIONS.some((j) => j.id === id);
+}
+
+/** Manual trigger of the same indicator check the nightly cron runs. */
+export async function pullIndicatorNow(
+  jurisdictionId: string,
   _prev: AdminActionState,
   _formData: FormData
 ): Promise<AdminActionState> {
   const { supabase, admin } = await requireAdmin();
   if (!admin) return { error: "Admin access required.", success: null };
+  if (!validJurisdiction(jurisdictionId))
+    return { error: "Unknown city.", success: null };
 
-  const outcome = await runLcraCheck(supabase);
+  const outcome = await runIndicatorCheck(
+    supabase,
+    getJurisdiction(jurisdictionId)
+  );
   revalidatePath("/admin");
   if (!outcome.ok) return { error: outcome.message, success: null };
   return {
@@ -42,22 +57,25 @@ export async function pullLcraNow(
 }
 
 /**
- * THE stage change: only an admin, only with a source link. Updates
- * the confirmed stage, logs it, then re-runs compliance so corrected
- * schedules go out — for the admin's own org immediately; every other
- * org is picked up by the nightly cron run against the new stage.
+ * THE stage change: only an admin, only with a source link, and only
+ * for one city at a time. Updates that city's confirmed stage, logs
+ * it, then re-runs compliance so corrected schedules go out.
  */
 export async function confirmStage(
+  jurisdictionId: string,
   _prev: AdminActionState,
   formData: FormData
 ): Promise<AdminActionState> {
   const { supabase, admin } = await requireAdmin();
   if (!admin) return { error: "Admin access required.", success: null };
+  if (!validJurisdiction(jurisdictionId))
+    return { error: "Unknown city.", success: null };
 
+  const jurisdiction = getJurisdiction(jurisdictionId);
   const stageRaw = Number(formData.get("stage"));
   const sourceLink = String(formData.get("source_link") ?? "").trim();
 
-  if (![0, 1, 2, 3, 4].includes(stageRaw))
+  if (!ALL_STAGES.includes(stageRaw as DroughtStage))
     return { error: "Pick a valid stage.", success: null };
   const stage = stageRaw as DroughtStage;
 
@@ -67,8 +85,7 @@ export async function confirmStage(
     if (!["http:", "https:"].includes(url.protocol)) throw new Error();
   } catch {
     return {
-      error:
-        "Paste the URL of the official notice (e.g. the Austin Water announcement) — it's required for the audit trail.",
+      error: `Paste the URL of the official ${jurisdiction.utility} notice — it's required for the audit trail.`,
       success: null,
     };
   }
@@ -81,25 +98,33 @@ export async function confirmStage(
       confirmed_by: admin.id,
       source_link: url.toString(),
     })
-    .eq("singleton", true);
+    .eq("jurisdiction", jurisdiction.id);
   if (error) return { error: "Could not update the stage.", success: null };
 
   await supabase.from("compliance_events").insert({
     org_id: null,
     type: "stage_confirmed",
-    summary: `${STAGE_NAMES[stage]} confirmed as active.`,
-    details: { stage, sourceLink: url.toString(), confirmedBy: admin.id },
+    summary: `${jurisdiction.name}: ${jurisdiction.stages[stage].name} confirmed as active.`,
+    details: {
+      jurisdiction: jurisdiction.id,
+      stage,
+      sourceLink: url.toString(),
+      confirmedBy: admin.id,
+    },
   });
 
-  // Acknowledge any open LCRA threshold alerts that suggested this stage.
+  // Acknowledge open threshold alerts for this city that suggested it.
   const { data: openAlerts } = await supabase
     .from("alerts")
-    .select("id, details")
+    .select("id, details, jurisdiction")
     .eq("type", "lcra_threshold")
     .eq("acknowledged", false)
     .is("org_id", null);
   for (const a of openAlerts ?? []) {
-    if ((a.details as { suggestedStage?: number } | null)?.suggestedStage === stage) {
+    if (
+      a.jurisdiction === jurisdiction.id &&
+      (a.details as { suggestedStage?: number } | null)?.suggestedStage === stage
+    ) {
       await supabase
         .from("alerts")
         .update({ acknowledged: true, acknowledged_by: admin.id })
@@ -112,9 +137,14 @@ export async function confirmStage(
   revalidatePath("/admin");
   revalidatePath("/dashboard");
   revalidatePath("/properties");
+
+  const unverifiedNote = jurisdiction.stages[stage].verified
+    ? ""
+    : ` Note: Driplin has not verified ${jurisdiction.utility}'s published rules for this stage, so affected properties are flagged for manual review instead of being corrected automatically.`;
+
   return {
     error: null,
-    success: `${STAGE_NAMES[stage]} is now the confirmed stage. Compliance re-run for your org: ${summary.checked} controller(s) checked, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix. Other orgs update on the nightly run.`,
+    success: `${jurisdiction.name} is now confirmed at ${jurisdiction.stages[stage].name}. Compliance re-run for your org: ${summary.checked} controller(s) checked, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix. Other orgs update on the nightly run.${unverifiedNote}`,
   };
 }
 

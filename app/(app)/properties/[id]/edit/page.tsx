@@ -12,7 +12,7 @@ export default async function EditPropertyPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count")
+    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction")
     .eq("id", id)
     .single();
 
@@ -35,6 +35,7 @@ export default async function EditPropertyPage({
             city: property.city,
             zip: property.zip,
             unit_count: property.unit_count,
+            jurisdiction: property.jurisdiction ?? "austin",
           }}
           submitLabel="Save changes"
         />

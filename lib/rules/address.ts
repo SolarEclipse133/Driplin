@@ -1,14 +1,11 @@
 /**
- * Address-digit helpers for Austin's watering-day assignment.
+ * Address-digit helpers for watering-day assignment.
  *
- * The City of Austin assigns each address a watering day based on the
- * LAST DIGIT of the street address number, per the council-approved
- * Drought Contingency Plan (City Code Chapter 6-4; plan last updated
- * November 2024). See https://www.austintexas.gov/department/water-conservation
- * ("Your Watering Schedule").
- *
- * The digit → day lookup table itself lives in watering-config.ts
- * (added with the rules engine); this file only extracts the digit.
+ * Every Central Texas city Driplin supports assigns watering days by
+ * the LAST DIGIT of the street address number — Austin per its Drought
+ * Contingency Plan, San Antonio per SAWS' schedule. Only the digit →
+ * day mapping differs, and that lives in each city's config under
+ * lib/jurisdictions/. This file only extracts the digit.
  */
 
 const STREET_NUMBER_RE = /^[0-9]+[A-Za-z]?$/;

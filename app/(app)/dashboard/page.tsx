@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StageBanner } from "@/components/stage-banner";
 import { RecheckButton } from "@/components/recheck-button";
+import { getJurisdiction } from "@/lib/jurisdictions";
 import { recheckCompliance } from "./actions";
 
 /**
@@ -62,7 +63,7 @@ export default async function DashboardPage() {
   const { data: properties } = await supabase
     .from("properties")
     .select(
-      "id, name, unit_count, street_number, street_name, controllers(id, name, vendor, compliance_status)"
+      "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status)"
     )
     .order("name");
 
@@ -100,9 +101,15 @@ export default async function DashboardPage() {
   });
   const compliantCount = rows.filter((r) => r.rollup === "compliant").length;
 
+  // Only show stage banners for cities this portfolio actually has
+  // properties in.
+  const orgJurisdictions = [
+    ...new Set(rows.map((r) => r.jurisdiction ?? "austin")),
+  ];
+
   return (
     <div>
-      <StageBanner />
+      <StageBanner jurisdictionIds={orgJurisdictions} />
 
       {/* Metric cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -159,7 +166,8 @@ export default async function DashboardPage() {
                 <div>
                   <p className="font-medium">{p.name}</p>
                   <p className="text-sm text-slate-500">
-                    {p.unit_count} {p.unit_count === 1 ? "unit" : "units"} ·{" "}
+                    {getJurisdiction(p.jurisdiction).name} · {p.unit_count}{" "}
+                    {p.unit_count === 1 ? "unit" : "units"} ·{" "}
                     {p.controllers.length === 0
                       ? "no controller connected"
                       : p.controllers.map((c) => c.name).join(", ")}

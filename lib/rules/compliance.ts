@@ -1,17 +1,16 @@
 /**
  * Compliance evaluation: compares a controller's watering programs
- * against the confirmed drought stage's rules for the property's
- * address digit, and computes a corrected schedule plus human
+ * against the confirmed drought stage's rules FOR THAT PROPERTY'S
+ * JURISDICTION, and computes a corrected schedule plus human
  * instructions for the manual-fallback path.
  */
 
 import { ScheduleProgram, Weekday, WEEKDAYS } from "@/lib/controllers/types";
 import {
   DroughtStage,
-  STAGE_NAMES,
-  STAGE_RULES,
+  getJurisdiction,
   TimeWindow,
-} from "./watering-config";
+} from "@/lib/jurisdictions";
 
 export interface ProgramFinding {
   vendorProgramId: string;
@@ -25,25 +24,29 @@ export interface ComplianceResult {
   correctedPrograms: ScheduleProgram[];
   /** Step-by-step fixes for a human, used when we can't push remotely. */
   manualInstructions: string[];
+  /**
+   * False when this jurisdiction's rules for this stage have not been
+   * verified against the published ordinance. The runner refuses to
+   * auto-push in that case — a wrong schedule is worse than none.
+   */
+  rulesVerified: boolean;
   /** Snapshot for the audit log. */
   rulesSnapshot: {
+    jurisdictionId: string;
+    jurisdictionName: string;
+    utility: string;
     stage: DroughtStage;
     stageName: string;
     digit: number;
     allowedDays: Weekday[];
     allowedWindows: TimeWindow[];
+    verified: boolean;
   };
 }
 
 function toMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
-}
-
-function fromMinutes(total: number): string {
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function dayLabel(d: Weekday): string {
@@ -62,12 +65,19 @@ function pickStart(durationMin: number, windows: TimeWindow[]): string | null {
   return null;
 }
 
+function describeWindows(windows: TimeWindow[]): string {
+  if (windows.length === 0) return "no watering hours";
+  return windows.map((w) => `${w.start}–${w.end}`).join(" or ");
+}
+
 export function evaluateCompliance(
   programs: ScheduleProgram[],
   digit: number,
-  stage: DroughtStage
+  stage: DroughtStage,
+  jurisdictionId: string
 ): ComplianceResult {
-  const rule = STAGE_RULES[stage];
+  const jurisdiction = getJurisdiction(jurisdictionId);
+  const rule = jurisdiction.stages[stage];
   const allowedDays = rule.daysByDigit[digit] ?? [];
   const findings: ProgramFinding[] = [];
   const corrected: ScheduleProgram[] = [];
@@ -83,10 +93,10 @@ export function evaluateCompliance(
       continue;
     }
 
-    if (stage === 4 || allowedDays.length === 0) {
+    if (allowedDays.length === 0 || rule.allowedWindows.length === 0) {
       if (program.days.length > 0) {
         problems.push(
-          `${STAGE_NAMES[stage]} allows no automatic irrigation, but this program waters ${program.days.map(dayLabel).join(", ")}.`
+          `${rule.name} allows no automatic irrigation, but this program waters ${program.days.map(dayLabel).join(", ")}.`
         );
         fixed = { ...fixed, enabled: false };
         manual.push(`Disable the program "${program.name}".`);
@@ -112,14 +122,15 @@ export function evaluateCompliance(
       let newStart = program.startTime;
       if (!inWindow) {
         problems.push(
-          `Runs at ${program.startTime} for ${program.durationMinutes} min; watering must finish by 10:00 a.m. or start after 7:00 p.m.`
+          `Runs at ${program.startTime} for ${program.durationMinutes} min; ${jurisdiction.utility} allows watering only ${describeWindows(rule.allowedWindows)}.`
         );
-        const picked = pickStart(program.durationMinutes, rule.allowedWindows);
-        newStart = picked ?? "05:00";
-        // Water in the early morning rather than at midnight.
-        if (newStart === "00:00" && toMinutes("05:00") + program.durationMinutes <= toMinutes("10:00")) {
-          newStart = "05:00";
-        }
+        newStart = pickStart(program.durationMinutes, rule.allowedWindows) ?? rule.allowedWindows[0].start;
+        // Prefer an early-morning start over midnight where allowed.
+        const fiveAm = toMinutes("05:00");
+        const earlyOk = rule.allowedWindows.some(
+          (w) => fitsWindow(fiveAm, program.durationMinutes, w)
+        );
+        if (newStart === "00:00" && earlyOk) newStart = "05:00";
       }
 
       if (problems.length > 0) {
@@ -127,7 +138,7 @@ export function evaluateCompliance(
         manual.push(
           `Change the program "${program.name}" to water only ${newDays
             .map(dayLabel)
-            .join(" and ")}, starting at ${fromMinutes(toMinutes(newStart))}.`
+            .join(" and ")}, starting at ${newStart}.`
         );
       }
     }
@@ -147,12 +158,17 @@ export function evaluateCompliance(
     findings,
     correctedPrograms: corrected,
     manualInstructions: manual,
+    rulesVerified: rule.verified,
     rulesSnapshot: {
+      jurisdictionId: jurisdiction.id,
+      jurisdictionName: jurisdiction.name,
+      utility: jurisdiction.utility,
       stage,
-      stageName: STAGE_NAMES[stage],
+      stageName: rule.name,
       digit,
       allowedDays,
       allowedWindows: rule.allowedWindows,
+      verified: rule.verified,
     },
   };
 }

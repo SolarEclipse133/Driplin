@@ -1,5 +1,5 @@
 /**
- * LCRA Hydromet SOAP client.
+ * LCRA Hydromet SOAP client — Austin's leading indicator.
  *
  * Service: https://hydrometdata.lcra.org/service.asmx (classic ASMX
  * SOAP; WSDL at https://hydrometdata.lcra.org/?WSDL). Operation
@@ -7,15 +7,14 @@
  * Travis and Buchanan:
  *   <WaterLevelPercent>93%</WaterLevelPercent>
  *   <WaterLevelText>...currently hold about 1,871,442 acre-feet...</WaterLevelText>
- * We parse the acre-feet number out of the text and keep the raw
+ * We parse the acre-feet figure out of the text and keep the raw
  * strings for auditability.
  */
 
-export interface LcraReading {
-  acreFeet: number;
+import { IndicatorReading } from "@/lib/jurisdictions/types";
+
+export interface LcraReading extends IndicatorReading {
   percentText: string;
-  rawText: string;
-  readAt: string; // ISO timestamp of when WE pulled it
 }
 
 const ENDPOINT = "https://hydrometdata.lcra.org/service.asmx";
@@ -68,14 +67,15 @@ export async function fetchLcraCombinedStorage(): Promise<LcraReading> {
       `Could not find an acre-feet figure in LCRA's text: "${text}"`
     );
   }
-  const acreFeet = Number(acreFeetMatch[1].replace(/,/g, ""));
-  if (!Number.isFinite(acreFeet) || acreFeet <= 0) {
-    throw new LcraError(`Parsed an implausible acre-feet value: ${acreFeet}`);
+  const value = Number(acreFeetMatch[1].replace(/,/g, ""));
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new LcraError(`Parsed an implausible acre-feet value: ${value}`);
   }
 
   return {
-    acreFeet,
+    value,
     percentText: percent,
+    displayText: `${value.toLocaleString()} acre-feet (${percent})`,
     rawText: text,
     readAt: new Date().toISOString(),
   };

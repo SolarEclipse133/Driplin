@@ -16,8 +16,7 @@ import {
   Text,
   View,
 } from "@react-pdf/renderer";
-import { STAGE_NAMES } from "@/lib/rules/watering-config";
-import type { DroughtStage } from "@/lib/rules/watering-config";
+import type { DroughtStage } from "@/lib/jurisdictions";
 
 export interface ReportData {
   orgName: string;
@@ -42,6 +41,8 @@ export interface ReportData {
   }[];
   stage: {
     stage: DroughtStage;
+    stageName: string;
+    utility: string;
     confirmedAt: string | null;
     sourceLink: string | null;
   };
@@ -198,7 +199,7 @@ export function BoardReport({ data }: { data: ReportData }) {
 
         <View style={styles.footer} fixed>
           <Text>
-            Drought restrictions applied: {STAGE_NAMES[stage.stage]}
+            Drought restrictions applied: {stage.utility} {stage.stageName}
             {stage.confirmedAt
               ? `, verified ${fmtDate(stage.confirmedAt)} against the official notice`
               : " (default)"}

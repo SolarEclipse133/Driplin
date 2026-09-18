@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runLcraCheck } from "@/lib/lcra/check";
+import { runAllIndicatorChecks } from "@/lib/indicators/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +10,12 @@ export const maxDuration = 60;
 
 /**
  * Nightly job (Vercel Cron, see vercel.json):
- *   1. Pull the LCRA combined-storage reading and store it; raise an
- *      internal admin alert if it crosses a stage threshold. This
- *      NEVER changes the active stage — that's admin-confirmed only.
+ *   1. Pull each city's drought indicator (LCRA combined storage for
+ *      Austin, Edwards Aquifer J-17 for San Antonio), store it, and
+ *      raise an internal admin alert on a threshold crossing. This
+ *      NEVER changes an active stage — that's admin-confirmed only.
  *   2. Re-run compliance for every organization against the currently
- *      CONFIRMED stage (schedules drift when managers edit them in
- *      vendor apps, so this catches violations daily).
+ *      CONFIRMED stage of each property's city.
  *
  * Secured with CRON_SECRET: Vercel sends it as a Bearer token.
  */
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const lcra = await runLcraCheck(supabase);
+  const indicators = await runAllIndicatorChecks(supabase);
 
   const { data: orgs } = await supabase.from("organizations").select("id");
   const complianceRuns: Record<string, unknown> = {};
@@ -43,5 +43,5 @@ export async function GET(request: NextRequest) {
     complianceRuns[org.id] = await runComplianceForOrg(supabase, org.id);
   }
 
-  return NextResponse.json({ lcra, complianceRuns });
+  return NextResponse.json({ indicators, complianceRuns });
 }

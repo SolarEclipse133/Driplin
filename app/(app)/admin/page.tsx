@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
+  ALL_STAGES,
   DroughtStage,
-  STAGE_NAMES,
-  suggestedStageForReading,
-} from "@/lib/rules/watering-config";
-import { PullLcraForm, ConfirmStageForm } from "@/components/admin-forms";
-import { acknowledgeAlert, confirmStage, pullLcraNow } from "./actions";
+  JURISDICTIONS,
+  getJurisdiction,
+} from "@/lib/jurisdictions";
+import { PullIndicatorForm, ConfirmStageForm } from "@/components/admin-forms";
+import { acknowledgeAlert, confirmStage, pullIndicatorNow } from "./actions";
 
-function centralTime(iso: string | null): string {
+function centralTime(iso: string | null | undefined): string {
   if (!iso) return "never";
   return new Date(iso).toLocaleString("en-US", {
     timeZone: "America/Chicago",
@@ -29,25 +30,15 @@ export default async function AdminPage() {
     .single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const { data: status } = await supabase
+  const { data: statusRows } = await supabase
     .from("drought_stage_status")
     .select(
-      "current_stage, confirmed_at, source_link, raw_lcra_reading, raw_lcra_percent, raw_lcra_read_at, profiles(full_name)"
-    )
-    .single();
-
-  const currentStage = (status?.current_stage ?? 0) as DroughtStage;
-  const confirmedBy = Array.isArray(status?.profiles)
-    ? status?.profiles[0]
-    : status?.profiles;
-  const reading = status?.raw_lcra_reading
-    ? Number(status.raw_lcra_reading)
-    : null;
-  const suggested = reading !== null ? suggestedStageForReading(reading) : null;
+      "jurisdiction, current_stage, confirmed_at, source_link, raw_indicator_value, raw_indicator_text, raw_indicator_read_at, profiles(full_name)"
+    );
 
   const { data: openAlerts } = await supabase
     .from("alerts")
-    .select("id, message, severity, created_at")
+    .select("id, message, severity, created_at, jurisdiction")
     .eq("acknowledged", false)
     .is("org_id", null)
     .order("created_at", { ascending: false });
@@ -56,75 +47,16 @@ export default async function AdminPage() {
     <div>
       <h1 className="text-2xl font-semibold">Drought stage administration</h1>
       <p className="mt-1 text-sm text-slate-500">
-        The LCRA gauge only ever suggests; the stage that drives customer
-        schedules is what you confirm here, against the official notice.
+        Water-supply gauges only ever suggest; the stage that drives
+        customer schedules is what you confirm here, city by city, against
+        each utility&apos;s official notice.
       </p>
 
-      {/* Current state */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-slate-500">
-            Confirmed stage (drives all schedules)
-          </h2>
-          <p className="mt-2 text-2xl font-bold">{STAGE_NAMES[currentStage]}</p>
-          <p className="mt-2 text-sm text-slate-600">
-            {status?.confirmed_at ? (
-              <>
-                Verified {centralTime(status.confirmed_at)}
-                {confirmedBy?.full_name ? ` by ${confirmedBy.full_name}` : ""}
-                {status.source_link && (
-                  <>
-                    {" · "}
-                    <a
-                      href={status.source_link}
-                      className="text-sky-700 underline"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      source
-                    </a>
-                  </>
-                )}
-              </>
-            ) : (
-              "Never confirmed — using the default (Conservation Stage) until you confirm below."
-            )}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-slate-500">
-            Latest LCRA reading (informational only)
-          </h2>
-          {reading !== null ? (
-            <>
-              <p className="mt-2 text-2xl font-bold">
-                {reading.toLocaleString()} acre-feet{" "}
-                <span className="text-base font-medium text-slate-500">
-                  ({status?.raw_lcra_percent})
-                </span>
-              </p>
-              <p className="mt-2 text-sm text-slate-600">
-                Pulled {centralTime(status?.raw_lcra_read_at ?? null)} · suggests{" "}
-                <strong>{STAGE_NAMES[suggested as DroughtStage]}</strong>
-                {suggested !== currentStage && " — differs from confirmed stage"}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">
-              No reading pulled yet. The nightly job fills this in, or pull
-              one now.
-            </p>
-          )}
-          <PullLcraForm action={pullLcraNow} />
-        </div>
-      </div>
-
-      {/* Internal alerts */}
+      {/* Internal alerts across all cities */}
       <h2 className="mt-8 text-lg font-semibold">Internal alerts</h2>
       {(openAlerts?.length ?? 0) === 0 ? (
         <p className="mt-2 text-sm text-slate-500">
-          Nothing needs attention. Threshold crossings will appear here.
+          Nothing needs attention. Threshold crossings appear here.
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
@@ -141,7 +73,7 @@ export default async function AdminPage() {
               </div>
               <form action={acknowledgeAlert}>
                 <input type="hidden" name="alert_id" value={a.id} />
-                <button className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
+                <button className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
                   Acknowledge
                 </button>
               </form>
@@ -150,9 +82,125 @@ export default async function AdminPage() {
         </ul>
       )}
 
-      {/* Stage confirmation */}
-      <h2 className="mt-8 text-lg font-semibold">Confirm the active stage</h2>
-      <ConfirmStageForm action={confirmStage} currentStage={currentStage} />
+      {/* One panel per city */}
+      {JURISDICTIONS.map((j) => {
+        const row = (statusRows ?? []).find((r) => r.jurisdiction === j.id);
+        const currentStage = (row?.current_stage ?? 0) as DroughtStage;
+        const confirmedBy = Array.isArray(row?.profiles)
+          ? row?.profiles[0]
+          : row?.profiles;
+        const value =
+          row?.raw_indicator_value != null ? Number(row.raw_indicator_value) : null;
+        const suggested =
+          value !== null && j.indicator ? j.indicator.suggestStage(value) : null;
+
+        return (
+          <section key={j.id} className="mt-10 border-t border-slate-200 pt-6">
+            <h2 className="text-lg font-semibold">
+              {j.name}{" "}
+              <span className="text-sm font-normal text-slate-500">
+                · {j.utility}
+              </span>
+            </h2>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="text-sm font-semibold text-slate-500">
+                  Confirmed stage (drives schedules here)
+                </h3>
+                <p className="mt-2 text-2xl font-bold">
+                  {j.stages[currentStage].name}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {row?.confirmed_at ? (
+                    <>
+                      Verified {centralTime(row.confirmed_at)}
+                      {confirmedBy?.full_name ? ` by ${confirmedBy.full_name}` : ""}
+                      {row.source_link && (
+                        <>
+                          {" · "}
+                          <a
+                            href={row.source_link}
+                            className="text-sky-700 underline"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            source
+                          </a>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    "Never confirmed — using the default until you confirm below."
+                  )}
+                </p>
+                {!j.stages[currentStage].verified && (
+                  <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Driplin has not verified {j.utility}&apos;s published rules
+                    for this stage, so properties here are flagged for manual
+                    review instead of auto-corrected.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <h3 className="text-sm font-semibold text-slate-500">
+                  Latest reading (informational only)
+                </h3>
+                {j.indicator ? (
+                  <>
+                    {value !== null ? (
+                      <>
+                        <p className="mt-2 text-2xl font-bold">
+                          {row?.raw_indicator_text ?? value.toLocaleString()}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {j.indicator.label} · pulled{" "}
+                          {centralTime(row?.raw_indicator_read_at)} · suggests{" "}
+                          <strong>
+                            {j.stages[suggested as DroughtStage].name}
+                          </strong>
+                          {suggested !== currentStage &&
+                            " — differs from confirmed stage"}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-600">
+                        No reading yet. The nightly job fills this in, or pull
+                        one now. Source: {j.indicator.label}.
+                      </p>
+                    )}
+                    <PullIndicatorForm
+                      action={pullIndicatorNow.bind(null, j.id)}
+                      label={j.name}
+                    />
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-600">
+                    No automated indicator for this city — stages are confirmed
+                    manually from the utility&apos;s notices.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <h3 className="mt-6 text-sm font-semibold">
+              Confirm the active stage for {j.name}
+            </h3>
+            <ConfirmStageForm
+              action={confirmStage.bind(null, j.id)}
+              currentStage={currentStage}
+              utility={j.utility}
+              officialUrl={j.officialUrl}
+              stageOptions={ALL_STAGES.map((s) => ({
+                value: s,
+                label: getJurisdiction(j.id).stages[s].name,
+                verified: getJurisdiction(j.id).stages[s].verified,
+              }))}
+            />
+          </section>
+        );
+      })}
     </div>
   );
 }

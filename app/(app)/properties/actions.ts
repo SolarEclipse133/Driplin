@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isValidStreetNumber } from "@/lib/rules/address";
+import { JURISDICTIONS, jurisdictionForCity } from "@/lib/jurisdictions";
 
 export type PropertyFormState = {
   error: string | null;
@@ -20,7 +21,14 @@ function parseAndValidate(formData: FormData) {
     city: String(formData.get("city") ?? "").trim(),
     zip: String(formData.get("zip") ?? "").trim(),
     unit_count: Number(formData.get("unit_count")),
+    jurisdiction: String(formData.get("jurisdiction") ?? "").trim(),
   };
+
+  // Blank selection means "work it out from the city name".
+  if (!values.jurisdiction) {
+    values.jurisdiction =
+      jurisdictionForCity(values.city)?.id ?? "austin";
+  }
 
   const fieldErrors: Record<string, string> = {};
   if (!values.name) fieldErrors.name = "Please enter a property name.";
@@ -34,6 +42,9 @@ function parseAndValidate(formData: FormData) {
     fieldErrors.zip = "ZIP code must be 5 digits.";
   if (!Number.isInteger(values.unit_count) || values.unit_count < 1)
     fieldErrors.unit_count = "Unit count must be a whole number of 1 or more.";
+  if (!JURISDICTIONS.some((j) => j.id === values.jurisdiction))
+    fieldErrors.jurisdiction =
+      "Pick the city whose watering rules apply to this property.";
 
   return { values, fieldErrors };
 }

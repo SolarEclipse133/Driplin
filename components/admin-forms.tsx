@@ -2,7 +2,6 @@
 
 import { useActionState } from "react";
 import type { AdminActionState } from "@/app/(app)/admin/actions";
-import { STAGE_NAMES } from "@/lib/rules/watering-config";
 
 type AdminAction = (
   prev: AdminActionState,
@@ -25,7 +24,13 @@ function Feedback({ state }: { state: AdminActionState }) {
   return null;
 }
 
-export function PullLcraForm({ action }: { action: AdminAction }) {
+export function PullIndicatorForm({
+  action,
+  label,
+}: {
+  action: AdminAction;
+  label: string;
+}) {
   const [state, formAction, pending] = useActionState(action, {
     error: null,
     success: null,
@@ -37,7 +42,7 @@ export function PullLcraForm({ action }: { action: AdminAction }) {
         disabled={pending}
         className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
       >
-        {pending ? "Contacting LCRA…" : "Pull LCRA reading now"}
+        {pending ? "Checking…" : `Pull ${label} reading now`}
       </button>
       <Feedback state={state} />
     </form>
@@ -47,9 +52,15 @@ export function PullLcraForm({ action }: { action: AdminAction }) {
 export function ConfirmStageForm({
   action,
   currentStage,
+  stageOptions,
+  utility,
+  officialUrl,
 }: {
   action: AdminAction;
   currentStage: number;
+  stageOptions: { value: number; label: string; verified: boolean }[];
+  utility: string;
+  officialUrl: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     error: null,
@@ -58,36 +69,40 @@ export function ConfirmStageForm({
   return (
     <form action={formAction} className="mt-3 max-w-xl space-y-4" noValidate>
       <div>
-        <label htmlFor="stage" className="block text-sm font-medium">
+        <label htmlFor={`stage_${utility}`} className="block text-sm font-medium">
           Confirmed stage
         </label>
         <select
-          id="stage"
+          id={`stage_${utility}`}
           name="stage"
           defaultValue={currentStage}
           className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         >
-          {([0, 1, 2, 3, 4] as const).map((s) => (
-            <option key={s} value={s}>
-              {STAGE_NAMES[s]}
+          {stageOptions.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+              {s.verified ? "" : " — rules not yet verified"}
             </option>
           ))}
         </select>
       </div>
       <div>
-        <label htmlFor="source_link" className="block text-sm font-medium">
+        <label
+          htmlFor={`source_${utility}`}
+          className="block text-sm font-medium"
+        >
           Official source URL (required)
         </label>
         <input
-          id="source_link"
+          id={`source_${utility}`}
           name="source_link"
           type="url"
-          placeholder="https://www.austintexas.gov/… (Austin Water announcement)"
+          placeholder={officialUrl}
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
         <p className="mt-1 text-xs text-slate-500">
-          Link the official Austin Water notice or “Your Watering Schedule”
-          page you verified against. Shown to customers as the audit trail.
+          Link the official {utility} announcement you verified against.
+          Shown to customers as the audit trail.
         </p>
       </div>
       <Feedback state={state} />
@@ -98,10 +113,6 @@ export function ConfirmStageForm({
       >
         {pending ? "Confirming & re-running compliance…" : "Confirm stage"}
       </button>
-      <p className="text-xs text-slate-500">
-        Confirming updates every dashboard, re-evaluates schedules against
-        the new stage, and pushes corrections to controllers that allow it.
-      </p>
     </form>
   );
 }

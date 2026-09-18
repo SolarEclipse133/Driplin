@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { BoardReport, ReportData } from "@/lib/reports/board-report";
-import type { DroughtStage } from "@/lib/rules/watering-config";
+import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export async function GET(
   const { data: property } = await supabase
     .from("properties")
     .select(
-      "id, name, street_number, street_name, city, state, zip, unit_count, organizations(name), controllers(compliance_status)"
+      "id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, organizations(name), controllers(compliance_status)"
     )
     .eq("id", propertyId)
     .single();
@@ -64,10 +64,13 @@ export async function GET(
     .order("created_at", { ascending: false })
     .limit(200);
 
+  // The stage that governs THIS property's city.
+  const jurisdiction = getJurisdiction(property.jurisdiction);
   const { data: stageStatus } = await supabase
     .from("drought_stage_status")
     .select("current_stage, confirmed_at, source_link")
-    .single();
+    .eq("jurisdiction", jurisdiction.id)
+    .maybeSingle();
 
   const all = events ?? [];
   // Each correction keeps saving water every week it stays in force;
@@ -120,6 +123,10 @@ export async function GET(
     })),
     stage: {
       stage: (stageStatus?.current_stage ?? 0) as DroughtStage,
+      stageName:
+        jurisdiction.stages[(stageStatus?.current_stage ?? 0) as DroughtStage]
+          .name,
+      utility: jurisdiction.utility,
       confirmedAt: stageStatus?.confirmed_at ?? null,
       sourceLink: stageStatus?.source_link ?? null,
     },
