@@ -41,6 +41,11 @@ export default async function PropertyDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
+  // Default report period: the last 90 days (async server component, so
+  // reading the clock here is fine — it runs per request, not per render).
+  const reportTo = new Date();
+  const reportFrom = new Date(reportTo.getTime() - 90 * 24 * 3600 * 1000);
+
   const { data: property } = await supabase
     .from("properties")
     .select("id, name, street_number, street_name, city, state, zip, unit_count")
@@ -274,6 +279,49 @@ export default async function PropertyDetailPage({
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Board report */}
+      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="font-semibold">Board report</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          A one-page PDF summarizing compliance activity and estimated water
+          savings — ready to hand to the HOA board.
+        </p>
+        <form
+          action={`/api/reports/${property.id}`}
+          method="GET"
+          target="_blank"
+          className="mt-3 flex flex-wrap items-end gap-3"
+        >
+          <div>
+            <label htmlFor="from" className="block text-xs font-medium text-slate-600">
+              From
+            </label>
+            <input
+              id="from"
+              name="from"
+              type="date"
+              defaultValue={reportFrom.toISOString().slice(0, 10)}
+              className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="to" className="block text-xs font-medium text-slate-600">
+              To
+            </label>
+            <input
+              id="to"
+              name="to"
+              type="date"
+              defaultValue={reportTo.toISOString().slice(0, 10)}
+              className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <button className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">
+            Download PDF report
+          </button>
+        </form>
       </div>
 
       {/* Demo controller */}
