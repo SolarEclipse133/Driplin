@@ -14,6 +14,34 @@ export type SendResult =
   | { status: "logged" }
   | { status: "failed"; error: string };
 
+/**
+ * Turn a provider's raw rejection into something a non-engineer can act
+ * on. These are account/plan limits people hit constantly while setting
+ * up, and the raw JSON tells them nothing.
+ */
+function explainProviderError(provider: "twilio" | "resend", body: string): string {
+  if (provider === "twilio") {
+    if (body.includes("572006") || body.includes("predefined SMS templates")) {
+      return "Twilio trial accounts can only send their own canned templates, not custom alerts. Upgrade the Twilio account (add funds) to enable Driplin's SMS alerts.";
+    }
+    if (body.includes("21608") || body.includes("unverified")) {
+      return "Twilio trial accounts can only text numbers you have verified. Verify this number in the Twilio console, or upgrade the account.";
+    }
+    if (body.includes("21211")) {
+      return "That phone number isn't valid. Use the format +15125551234.";
+    }
+  }
+  if (provider === "resend") {
+    if (body.includes("only send testing emails to your own email address")) {
+      return "Resend's free tier only delivers to the address the Resend account was created with. Verify a sending domain in Resend to email anyone else.";
+    }
+    if (body.includes("domain is invalid")) {
+      return "Resend rejected the sender address. Check the RESEND_FROM setting, or leave it unset to use the default testing sender.";
+    }
+  }
+  return body.slice(0, 300);
+}
+
 export async function sendSms(to: string, body: string): Promise<SendResult> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
@@ -34,8 +62,10 @@ export async function sendSms(to: string, body: string): Promise<SendResult> {
       }
     );
     if (!res.ok) {
-      const detail = (await res.text()).slice(0, 300);
-      return { status: "failed", error: `Twilio HTTP ${res.status}: ${detail}` };
+      return {
+        status: "failed",
+        error: explainProviderError("twilio", await res.text()),
+      };
     }
     return { status: "sent" };
   } catch {
@@ -66,8 +96,10 @@ export async function sendEmail(
       cache: "no-store",
     });
     if (!res.ok) {
-      const detail = (await res.text()).slice(0, 300);
-      return { status: "failed", error: `Resend HTTP ${res.status}: ${detail}` };
+      return {
+        status: "failed",
+        error: explainProviderError("resend", await res.text()),
+      };
     }
     return { status: "sent" };
   } catch {
