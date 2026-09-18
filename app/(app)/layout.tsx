@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/sign-out-button";
+import { Logo } from "@/components/logo";
 
 // Everything behind login depends on the visitor's session cookie, so these
 // pages must render per-request, never be pre-built at compile time.
@@ -40,11 +41,11 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="text-lg font-bold text-sky-700">
-              Driplin
+            <Link href="/dashboard">
+              <Logo size="sm" />
             </Link>
             <nav className="flex gap-1">
               <Link
