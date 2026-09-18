@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/lcra-pull",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

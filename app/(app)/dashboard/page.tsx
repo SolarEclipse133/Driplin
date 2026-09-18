@@ -1,8 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
+import { StageBanner } from "@/components/stage-banner";
+import { RecheckButton } from "@/components/recheck-button";
+import { recheckCompliance } from "./actions";
 
-// Placeholder dashboard — the full portfolio view (metric cards, property
-// list, alerts feed) is feature 5. For now it proves that auth works and
-// that the organization/profile rows were created correctly at sign-up.
+// Interim dashboard: stage verification banner + compliance re-check.
+// The full portfolio view (metric cards, property list, alerts feed)
+// arrives with feature 5.
 export default async function DashboardPage() {
   const supabase = await createClient();
 
@@ -31,10 +34,18 @@ export default async function DashboardPage() {
         Signed in as {user?.email} · {orgName}
       </p>
 
+      <div className="mt-6">
+        <StageBanner />
+      </div>
+
+      <div className="mt-4">
+        <RecheckButton action={recheckCompliance} />
+      </div>
+
       <div className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
         <p className="text-sm text-slate-500">
-          Your portfolio dashboard will appear here. Next step: add your
-          properties.
+          Your portfolio dashboard will appear here. Compliance results show
+          on each property&apos;s page for now.
         </p>
       </div>
     </div>

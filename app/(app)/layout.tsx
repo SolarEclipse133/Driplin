@@ -59,6 +59,14 @@ export default async function AppLayout({
               >
                 Properties
               </Link>
+              {profile?.role === "admin" && (
+                <Link
+                  href="/admin"
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50"
+                >
+                  Admin
+                </Link>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3">

@@ -25,6 +25,16 @@ const VENDOR_LABELS: Record<string, string> = {
   demo: "Demo",
 };
 
+const COMPLIANCE_BADGES: Record<string, { label: string; className: string }> = {
+  compliant: { label: "Compliant", className: "bg-green-50 text-green-800" },
+  violation: { label: "Violation", className: "bg-red-50 text-red-700" },
+  needs_manual_fix: {
+    label: "Needs manual fix",
+    className: "bg-amber-50 text-amber-800",
+  },
+  unknown: { label: "Not checked yet", className: "bg-slate-100 text-slate-600" },
+};
+
 export default async function PropertyDetailPage({
   params,
 }: PageProps<"/properties/[id]">) {
@@ -41,7 +51,7 @@ export default async function PropertyDetailPage({
   const { data: controllers } = await supabase
     .from("controllers")
     .select(
-      "id, vendor, vendor_device_id, name, status, last_seen_at, cached_schedules(schedule, fetched_at)"
+      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, cached_schedules(schedule, fetched_at)"
     )
     .eq("property_id", id)
     .order("created_at");
@@ -129,6 +139,18 @@ export default async function PropertyDetailPage({
                   >
                     {c.status}
                   </span>
+                  {(() => {
+                    const badge =
+                      COMPLIANCE_BADGES[c.compliance_status] ??
+                      COMPLIANCE_BADGES.unknown;
+                    return (
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.className}`}
+                      >
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-2">
                   <form action={syncController}>
@@ -175,6 +197,25 @@ export default async function PropertyDetailPage({
                   No watering programs found on this controller.
                 </p>
               )}
+              {c.compliance_status === "needs_manual_fix" && (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-semibold text-amber-900">
+                    This controller can&apos;t be updated remotely — please
+                    make these changes in the {VENDOR_LABELS[c.vendor]} app:
+                  </p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-amber-900">
+                    {((c.compliance_detail as {
+                      manualInstructions?: string[];
+                    } | null)?.manualInstructions ?? []).map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                  <p className="mt-2 text-xs text-amber-700">
+                    Once changed, hit “Sync now” and the check will clear on
+                    the next compliance run.
+                  </p>
+                </div>
+              )}
               {cached?.fetched_at && (
                 <p className="mt-2 text-xs text-slate-400">
                   Schedule last synced{" "}
@@ -182,6 +223,10 @@ export default async function PropertyDetailPage({
                     timeZone: "America/Chicago",
                   })}{" "}
                   (Central)
+                  {c.compliance_checked_at &&
+                    ` · compliance checked ${new Date(
+                      c.compliance_checked_at
+                    ).toLocaleString("en-US", { timeZone: "America/Chicago" })}`}
                 </p>
               )}
             </div>
