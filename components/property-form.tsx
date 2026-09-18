@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { PropertyFormState } from "@/app/(app)/properties/actions";
 
@@ -38,6 +38,10 @@ export function PropertyForm({
     error: null,
     fieldErrors: {},
   });
+  // Controlled values: React 19 resets uncontrolled form fields after a
+  // server-action submit, which would wipe the user's input whenever
+  // validation fails. Controlled inputs keep what they typed.
+  const [values, setValues] = useState<PropertyValues>(initialValues);
 
   const field = (
     name: keyof PropertyValues,
@@ -51,7 +55,10 @@ export function PropertyForm({
       <input
         id={name}
         name={name}
-        defaultValue={initialValues[name]}
+        value={values[name]}
+        onChange={(e) =>
+          setValues((v) => ({ ...v, [name]: e.target.value }))
+        }
         className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         {...props}
       />
