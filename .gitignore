@@ -32,3 +32,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
+
+# Throwaway test/verification scripts created while driving the app
+# (browser smoke tests, one-off data checks). Never part of the app.
+*.tmp.mjs
+*.tmp.ts
