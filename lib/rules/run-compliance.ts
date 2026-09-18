@@ -17,6 +17,7 @@ import {
   ScheduleWriteNotSupportedError,
 } from "@/lib/controllers/types";
 import { syncControllerById } from "@/lib/controllers/sync";
+import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { getWateringDigit } from "./address";
 import { DroughtStage } from "./watering-config";
 import { evaluateCompliance } from "./compliance";
@@ -173,14 +174,20 @@ export async function runComplianceForOrg(
           estimatedWeeklyGallonsSaved: savings.gallonsSaved,
         },
       });
-      await supabase.from("alerts").insert({
-        org_id: c.org_id,
-        property_id: property.id,
-        type: "violation",
-        severity: "info",
-        message: `${property.name}: schedule was out of compliance and has been corrected automatically.`,
-        details: { findings: result.findings },
-      });
+      const { data: correctionAlert } = await supabase
+        .from("alerts")
+        .insert({
+          org_id: c.org_id,
+          property_id: property.id,
+          type: "violation",
+          severity: "info",
+          message: `${property.name}: schedule was out of compliance and has been corrected automatically.`,
+          details: { findings: result.findings },
+        })
+        .select("id, org_id, type, message, details")
+        .single();
+      if (correctionAlert)
+        await dispatchAlertNotifications(supabase, correctionAlert);
     } catch (err) {
       // 4. Push failed or unsupported → manual-fallback mode.
       summary.needsManualFix += 1;
@@ -211,14 +218,19 @@ export async function runComplianceForOrg(
         summary: `Could not push corrected schedule to ${c.name} at ${property.name}; manual fix required.`,
         details: { reason, manualInstructions: result.manualInstructions },
       });
-      await supabase.from("alerts").insert({
-        org_id: c.org_id,
-        property_id: property.id,
-        type: "push_failed",
-        severity: "critical",
-        message: `${property.name} is out of compliance and needs a manual schedule change (${c.name}).`,
-        details: { manualInstructions: result.manualInstructions, reason },
-      });
+      const { data: manualAlert } = await supabase
+        .from("alerts")
+        .insert({
+          org_id: c.org_id,
+          property_id: property.id,
+          type: "push_failed",
+          severity: "critical",
+          message: `${property.name} is out of compliance and needs a manual schedule change (${c.name}).`,
+          details: { manualInstructions: result.manualInstructions, reason },
+        })
+        .select("id, org_id, type, message, details")
+        .single();
+      if (manualAlert) await dispatchAlertNotifications(supabase, manualAlert);
     }
   }
 

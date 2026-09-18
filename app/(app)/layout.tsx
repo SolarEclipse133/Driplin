@@ -59,6 +59,12 @@ export default async function AppLayout({
               >
                 Properties
               </Link>
+              <Link
+                href="/settings"
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Settings
+              </Link>
               {profile?.role === "admin" && (
                 <Link
                   href="/admin"

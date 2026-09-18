@@ -11,6 +11,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { fetchLcraCombinedStorage, LcraError } from "./hydromet";
 import {
   DroughtStage,
@@ -94,20 +95,25 @@ export async function runLcraCheck(
 
   let alertCreated = false;
   if (!alreadyAlerted) {
-    const { error: alertError } = await supabase.from("alerts").insert({
-      org_id: null,
-      type: "lcra_threshold",
-      severity: "warning",
-      message,
-      details: {
-        acreFeet: reading.acreFeet,
-        percentText: reading.percentText,
-        rawText: reading.rawText,
-        suggestedStage,
-        currentStage,
-      },
-    });
+    const { data: alert, error: alertError } = await supabase
+      .from("alerts")
+      .insert({
+        org_id: null,
+        type: "lcra_threshold",
+        severity: "warning",
+        message,
+        details: {
+          acreFeet: reading.acreFeet,
+          percentText: reading.percentText,
+          rawText: reading.rawText,
+          suggestedStage,
+          currentStage,
+        },
+      })
+      .select("id, org_id, type, message, details")
+      .single();
     alertCreated = !alertError;
+    if (alert) await dispatchAlertNotifications(supabase, alert);
   }
 
   return {
