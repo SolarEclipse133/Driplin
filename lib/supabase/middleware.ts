@@ -53,7 +53,9 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+  // "/" is the public marketing page; exact match only (startsWith("/")
+  // would make everything public).
+  const isPublic = path === "/" || PUBLIC_PATHS.some((p) => path.startsWith(p));
 
   if (!user && !isPublic) {
     // Not logged in and visiting a protected page → send to login.
