@@ -90,7 +90,7 @@ export async function confirmStage(
     };
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("drought_stage_status")
     .update({
       current_stage: stage,
@@ -98,8 +98,17 @@ export async function confirmStage(
       confirmed_by: admin.id,
       source_link: url.toString(),
     })
-    .eq("jurisdiction", jurisdiction.id);
+    .eq("jurisdiction", jurisdiction.id)
+    .select("jurisdiction");
   if (error) return { error: "Could not update the stage.", success: null };
+  // A city added in code but never seeded in the database would silently
+  // update nothing and report success — catch that instead.
+  if (!updated || updated.length === 0) {
+    return {
+      error: `No stage record exists for ${jurisdiction.name} yet. Run the latest database migration (see SETUP.md), then try again.`,
+      success: null,
+    };
+  }
 
   await supabase.from("compliance_events").insert({
     org_id: null,
