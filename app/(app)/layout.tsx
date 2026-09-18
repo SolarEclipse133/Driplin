@@ -46,12 +46,18 @@ export default async function AppLayout({
             <Link href="/dashboard" className="text-lg font-bold text-sky-700">
               Driplin
             </Link>
-            <nav className="hidden gap-1 sm:flex">
+            <nav className="flex gap-1">
               <Link
                 href="/dashboard"
                 className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               >
                 Dashboard
+              </Link>
+              <Link
+                href="/properties"
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Properties
               </Link>
             </nav>
           </div>
