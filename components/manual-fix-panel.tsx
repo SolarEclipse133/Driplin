@@ -80,7 +80,7 @@ export function ManualFixPanel({
       )}
 
       {needsManualFix && (
-        <form action={formAction} className="mt-3">
+        <form action={formAction} className="mt-3 space-y-2">
           <input type="hidden" name="controller_id" value={controllerId} />
           <input type="hidden" name="property_id" value={propertyId} />
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -97,6 +97,15 @@ export function ManualFixPanel({
               {pending ? "Checking the controller…" : "I've updated it"}
             </button>
           </div>
+          <label className="block text-xs text-amber-800">
+            Photo of the controller (optional — handy for the board report)
+            <input
+              type="file"
+              name="photo"
+              accept="image/jpeg,image/png,image/webp"
+              className="mt-1 block w-full text-xs file:mr-3 file:rounded-md file:border file:border-amber-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-amber-900"
+            />
+          </label>
         </form>
       )}
 

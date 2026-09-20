@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { verifyControllerNow } from "@/lib/rules/run-compliance";
+import { storeFixPhoto } from "@/lib/photos/store";
 
 export type ConfirmFixState = {
   error: string | null;
@@ -57,6 +58,17 @@ export async function confirmManualFix(
     .limit(1)
     .maybeSingle();
 
+  // Optional photo. A bad photo must not lose the confirmation, so it
+  // is uploaded before anything is written and refused loudly here
+  // rather than half-recorded.
+  const photoFile = formData.get("photo");
+  const photo = await storeFixPhoto(
+    supabase,
+    profile.org_id,
+    photoFile instanceof File ? photoFile : null
+  );
+  if (!photo.ok) return fail(photo.error);
+
   const check = await verifyControllerNow(supabase, controllerId);
   if (!check.ok) return fail(check.message);
 
@@ -81,6 +93,7 @@ export async function confirmManualFix(
         note: note || null,
         verified: check.compliant,
         remainingProblems: check.remainingProblems,
+        photoPath: photo.path,
       },
     })
     .select("id")
@@ -95,6 +108,8 @@ export async function confirmManualFix(
     confirmed_by_name: who,
     confirmed_via: "manager",
     note: note || null,
+    photo_path: photo.path,
+    photo_mime: photo.mime,
     flagged_at: flagEvent?.created_at ?? null,
     verified: check.compliant,
   });
@@ -104,7 +119,7 @@ export async function confirmManualFix(
 
   return {
     error: null,
-    success: check.message,
+    success: photo.path ? `${check.message} Photo saved.` : check.message,
     remainingProblems: check.remainingProblems,
   };
 }

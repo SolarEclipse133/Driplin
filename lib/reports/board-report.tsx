@@ -10,6 +10,7 @@
 
 import {
   Document,
+  Image,
   Link,
   Page,
   StyleSheet,
@@ -46,6 +47,20 @@ export interface ReportData {
     confirmedAt: string | null;
     sourceLink: string | null;
   };
+  /**
+   * Photos taken when someone confirmed a hands-on fix. Optional
+   * throughout: most reports will have none, and the appendix is
+   * simply left out then.
+   */
+  photos: {
+    date: string;
+    by: string;
+    via: "manager" | "vendor";
+    note: string | null;
+    verified: boolean | null;
+    /** data: URI, or null when the format can't be embedded. */
+    dataUri: string | null;
+  }[];
   generatedAt: string;
 }
 
@@ -98,6 +113,18 @@ const styles = StyleSheet.create({
   colDate: { width: 80 },
   colType: { width: 90 },
   colSummary: { flex: 1 },
+  photoCard: {
+    border: "1 solid #e2e8f0",
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 10,
+  },
+  photoImage: {
+    marginTop: 6,
+    maxHeight: 220,
+    objectFit: "contain",
+  },
+  photoMeta: { fontSize: 9, color: "#475569" },
   footer: {
     position: "absolute",
     left: 48,
@@ -195,6 +222,43 @@ export function BoardReport({ data }: { data: ReportData }) {
               </View>
             ))}
           </View>
+        )}
+
+        {data.photos.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle} break>
+              Appendix — photos of completed work
+            </Text>
+            {data.photos.map((p, i) => (
+              <View key={i} style={styles.photoCard} wrap={false}>
+                <Text style={styles.photoMeta}>
+                  {fmtDate(p.date)} · {p.by}
+                  {p.via === "vendor" ? " (vendor)" : ""}
+                  {p.verified === true
+                    ? " · schedule verified by Driplin afterwards"
+                    : p.verified === false
+                      ? " · schedule still did not match afterwards"
+                      : ""}
+                </Text>
+                {p.note && (
+                  <Text style={[styles.photoMeta, { marginTop: 2 }]}>
+                    “{p.note}”
+                  </Text>
+                )}
+                {p.dataUri ? (
+                  // react-pdf's Image is a PDF primitive, not an HTML
+                  // <img>; it has no alt prop to give.
+                  // eslint-disable-next-line jsx-a11y/alt-text
+                  <Image src={p.dataUri} style={styles.photoImage} />
+                ) : (
+                  <Text style={[styles.photoMeta, { marginTop: 4 }]}>
+                    A photo is on file for this confirmation but is in a
+                    format this report can&apos;t display.
+                  </Text>
+                )}
+              </View>
+            ))}
+          </>
         )}
 
         <View style={styles.footer} fixed>

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashWorkOrderToken } from "@/lib/vendors/tokens";
 import { verifyControllerNow } from "@/lib/rules/run-compliance";
+import { storeFixPhoto } from "@/lib/photos/store";
 import { findWorkOrderByToken } from "./data";
 
 export type VendorConfirmState = {
@@ -43,6 +44,17 @@ export async function completeWorkOrder(
     return fail("This controller is no longer set up in Driplin.");
 
   const supabase = createAdminClient();
+
+  // The org folder comes from the work order the token resolved to,
+  // never from anything the vendor submitted.
+  const photoFile = formData.get("photo");
+  const photo = await storeFixPhoto(
+    supabase,
+    order.orgId,
+    photoFile instanceof File ? photoFile : null
+  );
+  if (!photo.ok) return fail(photo.error);
+
   const check = await verifyControllerNow(supabase, order.controllerId);
   if (!check.ok) return fail(check.message);
 
@@ -78,6 +90,7 @@ export async function completeWorkOrder(
         verified: check.compliant,
         remainingProblems: check.remainingProblems,
         workOrderId: order.id,
+        photoPath: photo.path,
       },
     })
     .select("id")
@@ -94,6 +107,8 @@ export async function completeWorkOrder(
       confirmed_by_name: who,
       confirmed_via: "vendor",
       note: note || null,
+      photo_path: photo.path,
+      photo_mime: photo.mime,
       flagged_at: flagEvent?.created_at ?? null,
       verified: check.compliant,
     })

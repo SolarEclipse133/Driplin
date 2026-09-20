@@ -8,6 +8,7 @@ import { VendorConnectForm } from "@/components/vendor-connect-form";
 import { ManualFixPanel } from "@/components/manual-fix-panel";
 import { confirmManualFix } from "./confirm-actions";
 import { sendToVendor } from "./work-order-actions";
+import { signedPhotoUrl } from "@/lib/photos/store";
 import {
   addDemoController,
   connectVendorDevice,
@@ -58,10 +59,19 @@ export default async function PropertyDetailPage({
 
   const { data: confirmations } = await supabase
     .from("manual_fix_confirmations")
-    .select("id, controller_id, confirmed_by_name, confirmed_via, note, verified, created_at, flagged_at")
+    .select("id, controller_id, confirmed_by_name, confirmed_via, note, verified, created_at, flagged_at, photo_path")
     .eq("property_id", id)
     .order("created_at", { ascending: false })
     .limit(10);
+
+  // Photos live in a private bucket; hand the browser short-lived
+  // signed links rather than making the bucket public.
+  const photoUrls = new Map<string, string>();
+  for (const f of confirmations ?? []) {
+    if (!f.photo_path) continue;
+    const url = await signedPhotoUrl(supabase, f.photo_path);
+    if (url) photoUrls.set(f.id, url);
+  }
 
   // Vendors who service this property, plus any jobs already out.
   const { data: vendorLinks } = await supabase
@@ -319,6 +329,21 @@ export default async function PropertyDetailPage({
                             timeStyle: "short",
                           })}
                           {f.note ? ` · “${f.note}”` : ""}
+                          {photoUrls.has(f.id) && (
+                            <a
+                              href={photoUrls.get(f.id)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 block"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={photoUrls.get(f.id)}
+                                alt="Photo of the updated controller"
+                                className="h-20 w-20 rounded-md border border-slate-200 object-cover"
+                              />
+                            </a>
+                          )}
                         </li>
                       ))}
                     </ul>

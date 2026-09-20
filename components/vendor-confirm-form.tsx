@@ -78,6 +78,24 @@ export function VendorConfirmForm({
         />
       </div>
 
+      <div>
+        <label htmlFor="photo" className="block text-sm font-medium">
+          Photo of the controller (optional)
+        </label>
+        <input
+          id="photo"
+          name="photo"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          A quick shot of the schedule screen helps your client show the
+          work was done.
+        </p>
+      </div>
+
       {state.error && (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {state.error}

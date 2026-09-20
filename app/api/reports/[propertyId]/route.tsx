@@ -3,6 +3,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { BoardReport, ReportData } from "@/lib/reports/board-report";
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
+import { downloadPhoto, PDF_EMBEDDABLE_TYPES } from "@/lib/photos/store";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,34 @@ export async function GET(
     .eq("jurisdiction", jurisdiction.id)
     .maybeSingle();
 
+  // Photo proof from manual fixes inside the reporting period.
+  const { data: photoRows } = await supabase
+    .from("manual_fix_confirmations")
+    .select("created_at, confirmed_by_name, confirmed_via, note, verified, photo_path, photo_mime")
+    .eq("property_id", propertyId)
+    .not("photo_path", "is", null)
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(12);
+
+  const photos = [];
+  for (const row of photoRows ?? []) {
+    let dataUri: string | null = null;
+    if (row.photo_mime && PDF_EMBEDDABLE_TYPES.includes(row.photo_mime)) {
+      const buf = await downloadPhoto(supabase, row.photo_path as string);
+      if (buf) dataUri = `data:${row.photo_mime};base64,${buf.toString("base64")}`;
+    }
+    photos.push({
+      date: row.created_at as string,
+      by: row.confirmed_by_name as string,
+      via: row.confirmed_via as "manager" | "vendor",
+      note: (row.note as string | null) ?? null,
+      verified: row.verified as boolean | null,
+      dataUri,
+    });
+  }
+
   const all = events ?? [];
   // Each correction keeps saving water every week it stays in force;
   // count the weeks from the correction until the period end.
@@ -130,6 +159,7 @@ export async function GET(
       confirmedAt: stageStatus?.confirmed_at ?? null,
       sourceLink: stageStatus?.source_link ?? null,
     },
+    photos,
     generatedAt: new Date().toISOString(),
   };
 
