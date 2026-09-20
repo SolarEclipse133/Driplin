@@ -5,7 +5,7 @@ import { getWateringDigit } from "@/lib/rules/address";
 import { getAccountClient } from "@/lib/controllers/factory";
 import { ControllerError, ScheduleProgram, WEEKDAYS } from "@/lib/controllers/types";
 import { VendorConnectForm } from "@/components/vendor-connect-form";
-import { ConfirmFixForm } from "@/components/confirm-fix-form";
+import { ManualFixPanel } from "@/components/manual-fix-panel";
 import { confirmManualFix } from "./confirm-actions";
 import {
   addDemoController,
@@ -248,30 +248,18 @@ export default async function PropertyDetailPage({
                   </ol>
                 </div>
               )}
-              {c.compliance_status === "needs_manual_fix" && (
-                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-sm font-semibold text-amber-900">
-                    This controller can&apos;t be updated remotely — please
-                    make these changes in the {VENDOR_LABELS[c.vendor]} app:
-                  </p>
-                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-amber-900">
-                    {((c.compliance_detail as {
-                      manualInstructions?: string[];
-                    } | null)?.manualInstructions ?? []).map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                  </ol>
-                  <p className="mt-2 text-xs text-amber-700">
-                    When it&apos;s done, confirm below — Driplin will re-read
-                    the controller and tell you whether it now matches.
-                  </p>
-                  <ConfirmFixForm
-                    action={confirmManualFix}
-                    controllerId={c.id}
-                    propertyId={property.id}
-                  />
-                </div>
-              )}
+              <ManualFixPanel
+                action={confirmManualFix}
+                controllerId={c.id}
+                propertyId={property.id}
+                vendorLabel={VENDOR_LABELS[c.vendor] ?? c.vendor}
+                needsManualFix={c.compliance_status === "needs_manual_fix"}
+                instructions={
+                  ((c.compliance_detail as {
+                    manualInstructions?: string[];
+                  } | null)?.manualInstructions ?? [])
+                }
+              />
 
               {(() => {
                 const mine = (confirmations ?? []).filter(
