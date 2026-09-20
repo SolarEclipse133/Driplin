@@ -34,7 +34,13 @@ function extractTag(xml: string, tag: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-export async function fetchLcraCombinedStorage(): Promise<LcraReading> {
+/**
+ * One attempt. Wrapped in a retry below because LCRA's service
+ * intermittently returns a short or empty body, and the nightly job
+ * only runs once a day — a transient blip would otherwise cost a whole
+ * day's data point and leave a hole in the trend line.
+ */
+async function fetchOnce(): Promise<LcraReading> {
   let res: Response;
   try {
     res = await fetch(ENDPOINT, {
@@ -57,7 +63,12 @@ export async function fetchLcraCombinedStorage(): Promise<LcraReading> {
   const percent = extractTag(xml, "WaterLevelPercent");
   const text = extractTag(xml, "WaterLevelText");
   if (!percent || !text) {
-    throw new LcraError("LCRA response did not contain the expected fields.");
+    // Include what actually came back (trimmed) — a bare "unexpected
+    // response" tells whoever reads the alert nothing.
+    const sample = xml.replace(/\s+/g, " ").trim().slice(0, 200);
+    throw new LcraError(
+      `LCRA response did not contain the expected fields. Received: ${sample || "(empty response)"}`
+    );
   }
 
   // "…hold about 1,871,442 acre-feet of water." → 1871442
@@ -79,4 +90,22 @@ export async function fetchLcraCombinedStorage(): Promise<LcraReading> {
     rawText: text,
     readAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Public entry point: tries twice before giving up, so a single blip in
+ * LCRA's service does not silently skip a night.
+ */
+export async function fetchLcraCombinedStorage(): Promise<LcraReading> {
+  try {
+    return await fetchOnce();
+  } catch (first) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      return await fetchOnce();
+    } catch {
+      // Report the first failure: it is the more representative one.
+      throw first;
+    }
+  }
 }
