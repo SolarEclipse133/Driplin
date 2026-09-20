@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { verifyControllerNow } from "@/lib/rules/run-compliance";
+import { flaggedSince } from "@/lib/rules/flagged-since";
 import { storeFixPhoto } from "@/lib/photos/store";
 
 export type ConfirmFixState = {
@@ -47,16 +48,10 @@ export async function confirmManualFix(
     .single();
   if (!profile) return fail("Your account has no organization.");
 
-  // When was this flagged? The gap between being asked and being done
-  // is what the lateness ranking later measures.
-  const { data: flagEvent } = await supabase
-    .from("compliance_events")
-    .select("created_at")
-    .eq("controller_id", controllerId)
-    .eq("type", "push_failed")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // When did this problem actually start? Not the latest failure —
+  // a broken controller is re-flagged every night, and measuring from
+  // the most recent one would make every delay look short.
+  const flaggedAt = await flaggedSince(supabase, controllerId);
 
   // Optional photo. A bad photo must not lose the confirmation, so it
   // is uploaded before anything is written and refused loudly here
@@ -110,7 +105,7 @@ export async function confirmManualFix(
     note: note || null,
     photo_path: photo.path,
     photo_mime: photo.mime,
-    flagged_at: flagEvent?.created_at ?? null,
+    flagged_at: flaggedAt,
     verified: check.compliant,
   });
 

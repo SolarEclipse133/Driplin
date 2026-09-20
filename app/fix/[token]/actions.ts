@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hashWorkOrderToken } from "@/lib/vendors/tokens";
 import { verifyControllerNow } from "@/lib/rules/run-compliance";
+import { flaggedSince } from "@/lib/rules/flagged-since";
 import { storeFixPhoto } from "@/lib/photos/store";
 import { findWorkOrderByToken } from "./data";
 
@@ -60,14 +61,10 @@ export async function completeWorkOrder(
 
   const who = name || order.vendorName || "Vendor";
 
-  const { data: flagEvent } = await supabase
-    .from("compliance_events")
-    .select("created_at")
-    .eq("controller_id", order.controllerId)
-    .eq("type", "push_failed")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // When did this problem actually start? Not the latest failure —
+  // a broken controller is re-flagged every night, and measuring from
+  // the most recent one would make every delay look short.
+  const flaggedAt = await flaggedSince(supabase, order.controllerId);
 
   const summary = check.compliant
     ? `${who} (vendor) confirmed the controller was updated; Driplin re-checked it and it now matches the rules.`
@@ -109,7 +106,7 @@ export async function completeWorkOrder(
       note: note || null,
       photo_path: photo.path,
       photo_mime: photo.mime,
-      flagged_at: flagEvent?.created_at ?? null,
+      flagged_at: flaggedAt,
       verified: check.compliant,
     })
     .select("id")

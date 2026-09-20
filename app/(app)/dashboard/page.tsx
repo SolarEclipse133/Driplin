@@ -5,6 +5,9 @@ import { RecheckButton } from "@/components/recheck-button";
 import { getJurisdiction } from "@/lib/jurisdictions";
 import { getEarlyWarningNotes } from "@/lib/indicators/notes";
 import { EarlyWarningNotes } from "@/components/early-warning-note";
+import { ResponseTimes } from "@/components/response-times";
+import { formatDuration } from "@/lib/rules/benchmarks";
+import { loadBenchmarks } from "@/lib/rules/benchmark-data";
 import { recheckCompliance } from "./actions";
 
 /**
@@ -103,6 +106,8 @@ export default async function DashboardPage() {
   });
   const compliantCount = rows.filter((r) => r.rollup === "compliant").length;
 
+  const benchmarks = await loadBenchmarks(supabase, rows);
+
   // Only show stage banners for cities this portfolio actually has
   // properties in.
   const orgJurisdictions = [
@@ -121,7 +126,7 @@ export default async function DashboardPage() {
       )}
 
       {/* Metric cards */}
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <MetricCard label="Properties" value={String(rows.length)} />
         <MetricCard
           label="Compliant"
@@ -137,6 +142,15 @@ export default async function DashboardPage() {
           label="Open alerts"
           value={String(openAlerts?.length ?? 0)}
           hint="unacknowledged"
+        />
+        <MetricCard
+          label="Avg. response"
+          value={formatDuration(benchmarks.portfolioAverageHours)}
+          hint={
+            benchmarks.totalFixes === 0
+              ? "no hand-fixes needed yet"
+              : "flagged to confirmed, by hand"
+          }
         />
       </div>
 
@@ -192,6 +206,14 @@ export default async function DashboardPage() {
           ))}
         </ul>
       )}
+
+      {/* Response-time ranking */}
+      <h2 className="mt-8 text-lg font-semibold">Response times</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        How long each property takes to act when a change has to be made
+        by hand.
+      </p>
+      <ResponseTimes summary={benchmarks} />
 
       {/* Recent alerts feed */}
       <h2 className="mt-8 text-lg font-semibold">Recent alerts</h2>
