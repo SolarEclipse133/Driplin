@@ -14,9 +14,12 @@ import { ManualFixPanel } from "@/components/manual-fix-panel";
 import { confirmManualFix } from "./confirm-actions";
 import { sendToVendor } from "./work-order-actions";
 import { signedPhotoUrl } from "@/lib/photos/store";
+import { meterFor } from "@/lib/rules/meter";
+import { MeterAddressForm } from "@/components/meter-address-form";
 import {
   addDemoController,
   connectVendorDevice,
+  setMeterAddress,
   removeController,
   saveVendorKey,
   syncController,
@@ -106,7 +109,7 @@ export default async function PropertyDetailPage({
   const { data: controllers } = await supabase
     .from("controllers")
     .select(
-      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, cached_schedules(schedule, fetched_at)"
+      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, cached_schedules(schedule, fetched_at), meter_street_number, meter_no_street_address, meter_label"
     )
     .eq("property_id", id)
     .order("created_at");
@@ -199,6 +202,11 @@ export default async function PropertyDetailPage({
                 ).summary
               }
             </span>
+            <span className="text-slate-400">
+              {" "}
+              Controllers on their own meter are judged against that meter
+              instead.
+            </span>
           </p>
         </div>
         <Link
@@ -276,6 +284,24 @@ export default async function PropertyDetailPage({
                   </form>
                 </div>
               </div>
+
+              {(() => {
+                const meter = meterFor(property, c);
+                return (
+                  <MeterAddressForm
+                    action={setMeterAddress}
+                    controllerId={c.id}
+                    propertyId={property.id}
+                    currentDescription={meter.describe}
+                    inheritsFromProperty={meter.source === "property"}
+                    initial={{
+                      streetNumber: c.meter_street_number ?? "",
+                      noStreetAddress: c.meter_no_street_address === true,
+                      label: c.meter_label ?? "",
+                    }}
+                  />
+                );
+              })()}
 
               {programs.length > 0 ? (
                 <ul className="mt-3 divide-y divide-slate-100 text-sm">

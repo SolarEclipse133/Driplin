@@ -7,6 +7,7 @@ import { ControllerError } from "@/lib/controllers/types";
 import { DEMO_INITIAL_PROGRAMS } from "@/lib/controllers/demo";
 import { syncControllerById } from "@/lib/controllers/sync";
 import { randomUUID } from "crypto";
+import { isValidStreetNumber } from "@/lib/rules/address";
 
 export type ConnectFormState = { error: string | null; success: string | null };
 
@@ -144,4 +145,58 @@ export async function removeController(formData: FormData): Promise<void> {
   await supabase.from("controllers").delete().eq("id", controllerId);
   const propertyId = String(formData.get("property_id") ?? "");
   revalidatePath(`/properties/${propertyId}`);
+}
+
+export type MeterFormState = { error: string | null; success: string | null };
+
+/**
+ * Point one controller at its own irrigation meter.
+ *
+ * An HOA commonly holds several meters — the front entrance, the pool,
+ * a median down the street — each on its own service address and
+ * therefore its own watering day. Leaving these blank means "use the
+ * property's address", which is right for the ordinary one-meter case.
+ */
+export async function setMeterAddress(
+  _prev: MeterFormState,
+  formData: FormData
+): Promise<MeterFormState> {
+  const controllerId = String(formData.get("controller_id") ?? "");
+  const propertyId = String(formData.get("property_id") ?? "");
+  const noAddress = formData.get("meter_no_street_address") === "on";
+  const number = String(formData.get("meter_street_number") ?? "").trim();
+  const label = String(formData.get("meter_label") ?? "").trim();
+
+  const fail = (error: string): MeterFormState => ({ error, success: null });
+  if (!controllerId) return fail("Missing controller.");
+
+  if (!noAddress && number && !isValidStreetNumber(number)) {
+    return fail(
+      "Enter the meter's street number, e.g. 1204 or 1204B — or tick the box if it has no address."
+    );
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("controllers")
+    .update({
+      // Blank both fields = inherit the property again.
+      meter_street_number: noAddress || !number ? null : number,
+      meter_no_street_address: noAddress ? true : null,
+      meter_label: label || null,
+    })
+    .eq("id", controllerId);
+
+  if (error) return fail("Could not save this meter's address.");
+
+  revalidatePath(`/properties/${propertyId}`);
+  revalidatePath("/dashboard");
+  return {
+    error: null,
+    success: noAddress
+      ? "Saved — this meter has no street address, so the city's rule for such areas applies."
+      : number
+        ? `Saved — this controller is judged against ${number}.`
+        : "Saved — this controller uses the property's address.",
+  };
 }

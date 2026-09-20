@@ -18,7 +18,7 @@ import {
 } from "@/lib/controllers/types";
 import { syncControllerById } from "@/lib/controllers/sync";
 import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
-import { getWateringDigit } from "./address";
+import { meterFor } from "./meter";
 import {
   DEFAULT_PROFILE,
   type IrrigationType,
@@ -31,11 +31,13 @@ import {
  * before the class/type columns existed fall back to Driplin's own
  * default: a commercial account on an automatic system.
  */
-function profileOf(property: {
-  property_class?: string | null;
-  irrigation_type?: string | null;
-  no_street_address?: boolean | null;
-}): PropertyProfile {
+function profileOf(
+  property: {
+    property_class?: string | null;
+    irrigation_type?: string | null;
+  },
+  meter: { noStreetAddress: boolean }
+): PropertyProfile {
   return {
     propertyClass:
       (property.property_class as PropertyClass) ??
@@ -43,21 +45,10 @@ function profileOf(property: {
     irrigationType:
       (property.irrigation_type as IrrigationType) ??
       DEFAULT_PROFILE.irrigationType,
-    noStreetAddress: property.no_street_address === true,
+    // Whether there is an address is decided by the meter this
+    // controller is on, which may differ from the property's own.
+    noStreetAddress: meter.noStreetAddress,
   };
-}
-
-/**
- * The address digit, or 0 for a meter with no street address. The zero
- * is never read as a digit: those properties resolve to the city's rule
- * for address-less areas, or to no judgement at all.
- */
-function digitFor(property: {
-  street_number?: string | null;
-  no_street_address?: boolean | null;
-}): number | null {
-  if (property.no_street_address) return 0;
-  return getWateringDigit(property.street_number ?? "");
 }
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
@@ -100,7 +91,7 @@ export async function runComplianceForOrg(
   const { data: controllers, error } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type, no_street_address)"
+      "id, org_id, property_id, vendor, vendor_device_id, name, meter_street_number, meter_no_street_address, meter_label, properties(id, name, street_number, street_name, jurisdiction, property_class, irrigation_type, no_street_address)"
     )
     .eq("org_id", orgId);
   if (error) {
@@ -125,11 +116,16 @@ export async function runComplianceForOrg(
     const programs: ScheduleProgram[] =
       (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
 
-    const digit = digitFor(property);
-    if (digit === null) {
-      summary.errors.push(`${property.name}: invalid street number.`);
+    // Which meter is this controller on? Its own, if it declares one;
+    // otherwise the property's.
+    const meter = meterFor(property, c);
+    if (meter.digit === null) {
+      summary.errors.push(
+        `${property.name} (${c.name}): invalid street number on ${meter.source === "controller" ? "this controller's meter" : "the property"}.`
+      );
       continue;
     }
+    const digit = meter.digit;
 
     // 2. Evaluate against the confirmed stage for THIS property's city.
     const jurisdictionId = property.jurisdiction ?? "austin";
@@ -139,7 +135,7 @@ export async function runComplianceForOrg(
       digit,
       stage,
       jurisdictionId,
-      profileOf(property)
+      profileOf(property, meter)
     );
 
     // Cities whose published schedule we haven't been able to confirm:
@@ -362,7 +358,7 @@ export async function verifyControllerNow(
   const { data: c } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type, no_street_address)"
+      "id, org_id, vendor, vendor_device_id, name, meter_street_number, meter_no_street_address, meter_label, properties(id, name, street_number, street_name, jurisdiction, property_class, irrigation_type, no_street_address)"
     )
     .eq("id", controllerId)
     .single();
@@ -400,14 +396,18 @@ export async function verifyControllerNow(
   const programs: ScheduleProgram[] =
     (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
 
-  const digit = digitFor(property);
+  const meter = meterFor(property, c);
+  const digit = meter.digit;
   if (digit === null) {
     return {
       ...base,
       ok: false,
       compliant: null,
       remainingProblems: [],
-      message: "This property's street number is not a valid address number.",
+      message:
+        meter.source === "controller"
+          ? "This controller's meter address is not a valid street number."
+          : "This property's street number is not a valid address number.",
     };
   }
 
@@ -424,7 +424,7 @@ export async function verifyControllerNow(
     digit,
     stage,
     jurisdictionId,
-    profileOf(property)
+    profileOf(property, meter)
   );
 
   const status = !result.certified
