@@ -32,6 +32,7 @@ import { fetchJ17TenDayAverage } from "@/lib/indicators/j17";
 import {
   IndicatorThreshold,
   Jurisdiction,
+  Schedule,
   stageFromThresholds,
   TimeWindow,
 } from "./types";
@@ -55,6 +56,29 @@ const STAGE_2_WINDOWS: TimeWindow[] = [
   { start: "05:00", end: "10:00" },
   { start: "21:00", end: "24:00" },
 ];
+
+/**
+ * SAWS is the only city of the six that publishes a rule for meters
+ * with no street address, and it states it identically on the Stage 2
+ * and Stage 3 pages:
+ *
+ *   "Areas without a street address, such as medians and neighborhood
+ *    entryways, water on Wednesday."
+ *
+ * Same hours as everyone else in that stage — only the day is fixed.
+ */
+const WEDNESDAY_ONLY: Record<number, Weekday[]> = {
+  0: ["WED"], 1: ["WED"], 2: ["WED"], 3: ["WED"], 4: ["WED"],
+  5: ["WED"], 6: ["WED"], 7: ["WED"], 8: ["WED"], 9: ["WED"],
+};
+
+function noAddress(windows: TimeWindow[], hours: string): Schedule {
+  return {
+    daysByDigit: WEDNESDAY_ONLY,
+    allowedWindows: windows,
+    summary: `Medians, entryways and other areas with no street address water on Wednesday, ${hours}.`,
+  };
+}
 
 const noWatering: Record<number, Weekday[]> = {
   0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [],
@@ -83,6 +107,7 @@ export const SAN_ANTONIO: Jurisdiction = {
       allowedWindows: STAGE_1_WINDOWS,
       summary:
         "Landscape watering on your assigned day by address digit, overnight hours.",
+      noAddressSchedule: noAddress(STAGE_1_WINDOWS, "midnight–10 a.m. or 9 p.m.–midnight"),
       verified: true,
     },
     1: {
@@ -91,6 +116,7 @@ export const SAN_ANTONIO: Jurisdiction = {
       allowedWindows: STAGE_1_WINDOWS,
       summary:
         "Irrigation once a week on your assigned day, midnight–10 a.m. or 9 p.m.–midnight.",
+      noAddressSchedule: noAddress(STAGE_1_WINDOWS, "midnight–10 a.m. or 9 p.m.–midnight"),
       verified: true,
     },
     2: {
@@ -99,6 +125,7 @@ export const SAN_ANTONIO: Jurisdiction = {
       allowedWindows: STAGE_2_WINDOWS,
       summary:
         "Irrigation once a week on your assigned day, 5–10 a.m. or 9 p.m.–midnight.",
+      noAddressSchedule: noAddress(STAGE_2_WINDOWS, "5–10 a.m. or 9 p.m.–midnight"),
       verified: true,
     },
     3: {
@@ -107,6 +134,7 @@ export const SAN_ANTONIO: Jurisdiction = {
       allowedWindows: STAGE_2_WINDOWS,
       summary:
         "Irrigation once a week on your assigned day, 5–10 a.m. or 9 p.m.–midnight (Stage 3 adds surcharges but keeps the Stage 2 watering schedule).",
+      noAddressSchedule: noAddress(STAGE_2_WINDOWS, "5–10 a.m. or 9 p.m.–midnight"),
       verified: true,
     },
     4: {

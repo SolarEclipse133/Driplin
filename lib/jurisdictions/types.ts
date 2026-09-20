@@ -37,6 +37,12 @@ export type IrrigationType = "automatic" | "drip_or_hose";
 export interface PropertyProfile {
   propertyClass: PropertyClass;
   irrigationType: IrrigationType;
+  /**
+   * True when the meter has NO street address at all — a median, a
+   * neighborhood entryway, a greenbelt strip. There is no digit to
+   * derive, so these cities' digit tables simply do not apply.
+   */
+  noStreetAddress?: boolean;
 }
 
 /**
@@ -78,6 +84,18 @@ export interface StageRule extends Schedule {
    */
   variants?: Partial<Record<ScheduleVariantKey, Schedule>>;
   /**
+   * Schedule for meters with no street address. SAWS publishes one
+   * ("Areas without a street address, such as medians and neighborhood
+   * entryways, water on Wednesday"); most cities do not.
+   *
+   * ABSENT MEANS UNKNOWN, NOT UNRESTRICTED. When a city publishes no
+   * such rule, Driplin makes no judgement and asks the manager to check
+   * with the utility. Inventing a digit for a median would produce a
+   * confident wrong day, which is the failure this field exists to
+   * prevent.
+   */
+  noAddressSchedule?: Schedule;
+  /**
    * False when these rules have NOT been confirmed against the city's
    * published ordinance. Driplin will never auto-push a schedule based
    * on an unverified rule set — it flags the property for human review
@@ -103,6 +121,17 @@ export function resolveSchedule(
   rule: StageRule,
   profile: PropertyProfile = DEFAULT_PROFILE
 ): Schedule {
+  // No street address: only the city's own rule for such areas applies.
+  // Never fall back to a digit table — there is no digit.
+  if (profile.noStreetAddress) {
+    return (
+      rule.noAddressSchedule ?? {
+        daysByDigit: {},
+        allowedWindows: rule.allowedWindows,
+        summary: rule.summary,
+      }
+    );
+  }
   const exact = rule.variants?.[
     `${profile.propertyClass}:${profile.irrigationType}` as ScheduleVariantKey
   ];
@@ -114,6 +143,17 @@ export function resolveSchedule(
     allowedWindows: rule.allowedWindows,
     summary: rule.summary,
   };
+}
+
+/**
+ * Can Driplin judge this property at all under this stage? False when
+ * the city's schedule is unknown outright, or when the meter has no
+ * street address and the city publishes no rule for that case.
+ */
+export function canJudge(rule: StageRule, profile: PropertyProfile): boolean {
+  if (rule.scheduleUnknown) return false;
+  if (profile.noStreetAddress && !rule.noAddressSchedule) return false;
+  return true;
 }
 
 export interface IndicatorReading {

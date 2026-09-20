@@ -6,7 +6,7 @@ export default async function PropertiesPage() {
   const supabase = await createClient();
   const { data: properties, error } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count")
+    .select("id, name, street_number, street_name, city, zip, unit_count, no_street_address")
     .order("name");
 
   return (
@@ -59,7 +59,9 @@ export default async function PropertiesPage() {
                   className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800"
                   title="Austin assigns watering days by the last digit of the street number"
                 >
-                  Watering digit: {getWateringDigit(p.street_number) ?? "?"}
+                  {p.no_street_address
+                    ? "No street address"
+                    : `Watering digit: ${getWateringDigit(p.street_number ?? "") ?? "?"}`}
                 </span>
                 <Link
                   href={`/properties/${p.id}`}

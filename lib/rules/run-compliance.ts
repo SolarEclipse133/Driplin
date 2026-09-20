@@ -34,6 +34,7 @@ import {
 function profileOf(property: {
   property_class?: string | null;
   irrigation_type?: string | null;
+  no_street_address?: boolean | null;
 }): PropertyProfile {
   return {
     propertyClass:
@@ -42,7 +43,21 @@ function profileOf(property: {
     irrigationType:
       (property.irrigation_type as IrrigationType) ??
       DEFAULT_PROFILE.irrigationType,
+    noStreetAddress: property.no_street_address === true,
   };
+}
+
+/**
+ * The address digit, or 0 for a meter with no street address. The zero
+ * is never read as a digit: those properties resolve to the city's rule
+ * for address-less areas, or to no judgement at all.
+ */
+function digitFor(property: {
+  street_number?: string | null;
+  no_street_address?: boolean | null;
+}): number | null {
+  if (property.no_street_address) return 0;
+  return getWateringDigit(property.street_number ?? "");
 }
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
@@ -85,7 +100,7 @@ export async function runComplianceForOrg(
   const { data: controllers, error } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type)"
+      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type, no_street_address)"
     )
     .eq("org_id", orgId);
   if (error) {
@@ -110,7 +125,7 @@ export async function runComplianceForOrg(
     const programs: ScheduleProgram[] =
       (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
 
-    const digit = getWateringDigit(property.street_number);
+    const digit = digitFor(property);
     if (digit === null) {
       summary.errors.push(`${property.name}: invalid street number.`);
       continue;
@@ -347,7 +362,7 @@ export async function verifyControllerNow(
   const { data: c } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type)"
+      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type, no_street_address)"
     )
     .eq("id", controllerId)
     .single();
@@ -385,7 +400,7 @@ export async function verifyControllerNow(
   const programs: ScheduleProgram[] =
     (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
 
-  const digit = getWateringDigit(property.street_number);
+  const digit = digitFor(property);
   if (digit === null) {
     return {
       ...base,

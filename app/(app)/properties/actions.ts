@@ -16,6 +16,10 @@ const OK: PropertyFormState = { error: null, fieldErrors: {} };
 function parseAndValidate(formData: FormData) {
   const values = {
     name: String(formData.get("name") ?? "").trim(),
+    // A median or entryway has no street number at all. Storing null
+    // is the honest representation; inventing one would produce a
+    // confident wrong watering day.
+    no_street_address: formData.get("no_street_address") === "on",
     street_number: String(formData.get("street_number") ?? "").trim(),
     street_name: String(formData.get("street_name") ?? "").trim(),
     city: String(formData.get("city") ?? "").trim(),
@@ -37,9 +41,9 @@ function parseAndValidate(formData: FormData) {
 
   const fieldErrors: Record<string, string> = {};
   if (!values.name) fieldErrors.name = "Please enter a property name.";
-  if (!isValidStreetNumber(values.street_number))
+  if (!values.no_street_address && !isValidStreetNumber(values.street_number))
     fieldErrors.street_number =
-      "Enter the street number, e.g. 1204 or 1204B (digits, optional letter).";
+      "Enter the street number, e.g. 1204 or 1204B (digits, optional letter). If this meter has no address, tick the box below.";
   if (!values.street_name)
     fieldErrors.street_name = "Please enter the street name.";
   if (!values.city) fieldErrors.city = "Please enter the city.";
@@ -55,7 +59,14 @@ function parseAndValidate(formData: FormData) {
   if (!["automatic", "drip_or_hose"].includes(values.irrigation_type))
     fieldErrors.irrigation_type = "Pick the irrigation type on this meter.";
 
-  return { values, fieldErrors };
+  // The database requires exactly one of the two: a street number, or
+  // the no-address flag. A blank string is neither, so normalize it.
+  const row = {
+    ...values,
+    street_number: values.no_street_address ? null : values.street_number,
+  };
+
+  return { values: row, fieldErrors };
 }
 
 export async function createProperty(

@@ -11,6 +11,7 @@ import {
   DroughtStage,
   PropertyProfile,
   TimeWindow,
+  canJudge,
   getJurisdiction,
   resolveSchedule,
 } from "@/lib/jurisdictions";
@@ -55,6 +56,7 @@ export interface ComplianceResult {
     /** Which published table this judgement used — part of the audit trail. */
     propertyClass: string;
     irrigationType: string;
+    noStreetAddress: boolean;
   };
 }
 
@@ -119,11 +121,14 @@ export function evaluateCompliance(
     verified: rule.verified,
     propertyClass: profile.propertyClass,
     irrigationType: profile.irrigationType,
+    noStreetAddress: profile.noStreetAddress === true,
   };
 
   // We don't know this city's day assignment — say so plainly rather
-  // than judging the schedule against a guess.
-  if (rule.scheduleUnknown) {
+  // than judging the schedule against a guess. That covers both a city
+  // whose table we've never confirmed and a median in a city that
+  // publishes no rule for areas without a street address.
+  if (!canJudge(stageRule, profile)) {
     return {
       compliant: false,
       certified: false,
@@ -132,7 +137,9 @@ export function evaluateCompliance(
       findings: [],
       correctedPrograms: programs,
       manualInstructions: [
-        `Check this property's assigned watering day and hours for ${rule.name} at ${jurisdiction.officialUrl}, then confirm the controller matches.`,
+        profile.noStreetAddress
+          ? `This meter has no street address, and ${jurisdiction.utility} publishes no watering day for such areas. Ask ${jurisdiction.utility} which day applies to it under ${rule.name} (${jurisdiction.officialUrl}), then set the controller by hand.`
+          : `Check this property's assigned watering day and hours for ${rule.name} at ${jurisdiction.officialUrl}, then confirm the controller matches.`,
       ],
       rulesSnapshot: snapshot,
     };

@@ -12,7 +12,7 @@ export default async function EditPropertyPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type")
+    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address")
     .eq("id", id)
     .single();
 
@@ -30,7 +30,7 @@ export default async function EditPropertyPage({
           action={updateWithId}
           initialValues={{
             name: property.name,
-            street_number: property.street_number,
+            street_number: property.street_number ?? "",
             street_name: property.street_name,
             city: property.city,
             zip: property.zip,
@@ -38,6 +38,7 @@ export default async function EditPropertyPage({
             jurisdiction: property.jurisdiction ?? "austin",
             property_class: property.property_class ?? "commercial",
             irrigation_type: property.irrigation_type ?? "automatic",
+            no_street_address: property.no_street_address ?? false,
           }}
           submitLabel="Save changes"
         />

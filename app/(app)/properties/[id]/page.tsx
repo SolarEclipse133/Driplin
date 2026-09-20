@@ -57,7 +57,7 @@ export default async function PropertyDetailPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, property_class, irrigation_type")
+    .select("id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address")
     .eq("id", id)
     .single();
   if (!property) notFound();
@@ -163,10 +163,13 @@ export default async function PropertyDetailPage({
         <div>
           <h1 className="text-2xl font-semibold">{property.name}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {property.street_number} {property.street_name}, {property.city}{" "}
-            {property.zip} · {property.unit_count}{" "}
-            {property.unit_count === 1 ? "unit" : "units"} · Watering digit:{" "}
-            {getWateringDigit(property.street_number) ?? "?"}
+            {property.no_street_address ? "" : `${property.street_number} `}
+            {property.street_name}, {property.city} {property.zip} ·{" "}
+            {property.unit_count}{" "}
+            {property.unit_count === 1 ? "unit" : "units"} ·{" "}
+            {property.no_street_address
+              ? "No street address"
+              : `Watering digit: ${getWateringDigit(property.street_number ?? "") ?? "?"}`}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {property.property_class === "residential"
@@ -184,6 +187,7 @@ export default async function PropertyDetailPage({
                     stageForProperty
                   ],
                   {
+                    noStreetAddress: property.no_street_address === true,
                     propertyClass:
                       (property.property_class as "residential" | "commercial") ??
                       "commercial",

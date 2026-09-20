@@ -15,6 +15,7 @@ type PropertyValues = {
   jurisdiction: string;
   property_class: string;
   irrigation_type: string;
+  no_street_address: boolean;
 };
 
 const EMPTY: PropertyValues = {
@@ -27,6 +28,7 @@ const EMPTY: PropertyValues = {
   jurisdiction: "austin",
   property_class: "commercial",
   irrigation_type: "automatic",
+  no_street_address: false,
 };
 
 export function PropertyForm({
@@ -50,8 +52,10 @@ export function PropertyForm({
   // validation fails. Controlled inputs keep what they typed.
   const [values, setValues] = useState<PropertyValues>(initialValues);
 
+  // Only the text and number fields go through this helper; the
+  // no-address checkbox is rendered on its own above.
   const field = (
-    name: keyof PropertyValues,
+    name: Exclude<keyof PropertyValues, "no_street_address">,
     label: string,
     props: React.InputHTMLAttributes<HTMLInputElement> = {}
   ) => (
@@ -82,8 +86,27 @@ export function PropertyForm({
       })}
 
       <div className="grid grid-cols-[8rem_1fr] gap-3">
-        {field("street_number", "Street number", { placeholder: "1204" })}
-        {field("street_name", "Street name", { placeholder: "W Oltorf St" })}
+        {values.no_street_address ? (
+          <div>
+            <label className="block text-sm font-medium text-slate-400">
+              Street number
+            </label>
+            <div className="mt-1 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+              No street address
+            </div>
+          </div>
+        ) : (
+          field("street_number", "Street number", { placeholder: "1204" })
+        )}
+        {field(
+          "street_name",
+          values.no_street_address ? "Where it is" : "Street name",
+          {
+            placeholder: values.no_street_address
+              ? "Oak Ridge Blvd median, 1st to 3rd"
+              : "W Oltorf St",
+          }
+        )}
       </div>
       <p className="-mt-2 text-xs text-slate-500">
         The street number matters: Austin assigns watering days by its last
@@ -128,6 +151,43 @@ export function PropertyForm({
         <p className="mt-1 text-xs text-slate-500">
           The utility whose drought restrictions this property must follow.
         </p>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+        <label className="flex items-start gap-2.5 text-sm">
+          <input
+            type="checkbox"
+            name="no_street_address"
+            checked={values.no_street_address}
+            onChange={(e) =>
+              setValues((v) => ({
+                ...v,
+                no_street_address: e.target.checked,
+                street_number: e.target.checked ? "" : v.street_number,
+              }))
+            }
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+          />
+          <span>
+            <span className="font-medium">
+              This meter has no street address
+            </span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              A median, a neighborhood entryway, a greenbelt strip. Check the
+              water bill first — most irrigation meters are given a service
+              address, and that is the one the city uses to set the watering
+              day.
+            </span>
+          </span>
+        </label>
+        {values.no_street_address && (
+          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Watering days for these areas are set by city rule, not by an
+            address digit. San Antonio waters them on Wednesday. The other
+            five cities publish no rule, so Driplin will flag this property
+            for you to confirm with the utility rather than guess a day.
+          </p>
+        )}
       </div>
 
       <div>
