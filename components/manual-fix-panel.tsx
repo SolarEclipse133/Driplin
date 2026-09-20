@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { ConfirmFixState } from "@/app/(app)/properties/[id]/confirm-actions";
 import type { WorkOrderState } from "@/app/(app)/properties/[id]/work-order-actions";
 import { SendToVendor } from "./send-to-vendor";
+import { PhotoInput } from "./photo-input";
 
 /**
  * The manual-fix instructions plus the "I've updated it" confirmation.
@@ -41,6 +42,7 @@ export function ManualFixPanel({
   vendors: { id: string; name: string; email: string | null }[];
   openOrderCount: number;
 }) {
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [state, formAction, pending] = useActionState(action, {
     error: null,
     success: null,
@@ -91,21 +93,22 @@ export function ManualFixPanel({
             />
             <button
               type="submit"
-              disabled={pending}
+              disabled={pending || preparingPhoto}
               className="shrink-0 rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
             >
-              {pending ? "Checking the controller…" : "I've updated it"}
+              {pending
+                ? "Checking the controller…"
+                : preparingPhoto
+                  ? "Preparing photo…"
+                  : "I've updated it"}
             </button>
           </div>
-          <label className="block text-xs text-amber-800">
-            Photo of the controller (optional — handy for the board report)
-            <input
-              type="file"
-              name="photo"
-              accept="image/jpeg,image/png,image/webp"
-              className="mt-1 block w-full text-xs file:mr-3 file:rounded-md file:border file:border-amber-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-amber-900"
-            />
-          </label>
+          <PhotoInput
+            id={`photo-${controllerId}`}
+            label="Photo of the controller (optional — handy for the board report)"
+            tone="amber"
+            onBusyChange={setPreparingPhoto}
+          />
         </form>
       )}
 

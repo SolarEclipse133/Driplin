@@ -1,6 +1,11 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
+import {
+  ACCEPTED_PHOTO_TYPES,
+  MAX_PHOTO_BYTES,
+  megabytes,
+} from "./limits";
 
 /**
  * Photo proof for manual fixes.
@@ -12,16 +17,14 @@ import { randomUUID } from "crypto";
  */
 
 export const PHOTO_BUCKET = "fix-photos";
-/** Phone photos are a few MB; anything larger is not a photo of a controller. */
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
-/**
- * JPEG and PNG embed in the board report. WebP is accepted for
- * convenience but won't render in the PDF, so the report says a photo
- * is on file rather than silently dropping it.
- */
-export const ACCEPTED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-export const PDF_EMBEDDABLE_TYPES = ["image/jpeg", "image/png"];
+// The size and type rules live in ./limits so the upload form can
+// apply the same ones before sending anything.
+export {
+  ACCEPTED_PHOTO_TYPES,
+  MAX_PHOTO_BYTES,
+  PDF_EMBEDDABLE_TYPES,
+} from "./limits";
 
 const EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -54,7 +57,7 @@ export async function storeFixPhoto(
   if (file.size > MAX_PHOTO_BYTES) {
     return {
       ok: false,
-      error: `That photo is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is ${MAX_PHOTO_BYTES / 1024 / 1024} MB.`,
+      error: `That photo is ${megabytes(file.size)}; the limit is ${megabytes(MAX_PHOTO_BYTES)}.`,
     };
   }
 

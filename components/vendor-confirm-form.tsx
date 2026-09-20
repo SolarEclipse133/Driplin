@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { VendorConfirmState } from "@/app/fix/[token]/actions";
+import { PhotoInput } from "./photo-input";
 
 /**
  * What the landscaper sees on their phone. Big tap target, nothing to
@@ -21,6 +22,7 @@ export function VendorConfirmForm({
   token: string;
   vendorName: string;
 }) {
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [state, formAction, pending] = useActionState(action, {
     error: null,
     success: null,
@@ -78,23 +80,13 @@ export function VendorConfirmForm({
         />
       </div>
 
-      <div>
-        <label htmlFor="photo" className="block text-sm font-medium">
-          Photo of the controller (optional)
-        </label>
-        <input
-          id="photo"
-          name="photo"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          capture="environment"
-          className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          A quick shot of the schedule screen helps your client show the
-          work was done.
-        </p>
-      </div>
+      <PhotoInput
+        id="photo"
+        label="Photo of the controller (optional)"
+        hint="A quick shot of the schedule screen helps your client show the work was done."
+        capture
+        onBusyChange={setPreparingPhoto}
+      />
 
       {state.error && (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -104,10 +96,14 @@ export function VendorConfirmForm({
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || preparingPhoto}
         className="w-full rounded-lg bg-sky-700 px-4 py-4 text-base font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
       >
-        {pending ? "Checking the controller…" : "I've made these changes"}
+        {pending
+          ? "Checking the controller…"
+          : preparingPhoto
+            ? "Preparing photo…"
+            : "I've made these changes"}
       </button>
     </form>
   );
