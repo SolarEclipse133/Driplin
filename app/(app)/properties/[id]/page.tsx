@@ -5,6 +5,8 @@ import { getWateringDigit } from "@/lib/rules/address";
 import { getAccountClient } from "@/lib/controllers/factory";
 import { ControllerError, ScheduleProgram, WEEKDAYS } from "@/lib/controllers/types";
 import { VendorConnectForm } from "@/components/vendor-connect-form";
+import { ConfirmFixForm } from "@/components/confirm-fix-form";
+import { confirmManualFix } from "./confirm-actions";
 import {
   addDemoController,
   connectVendorDevice,
@@ -52,6 +54,13 @@ export default async function PropertyDetailPage({
     .eq("id", id)
     .single();
   if (!property) notFound();
+
+  const { data: confirmations } = await supabase
+    .from("manual_fix_confirmations")
+    .select("id, controller_id, confirmed_by_name, confirmed_via, note, verified, created_at, flagged_at")
+    .eq("property_id", id)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
   const { data: controllers } = await supabase
     .from("controllers")
@@ -253,11 +262,59 @@ export default async function PropertyDetailPage({
                     ))}
                   </ol>
                   <p className="mt-2 text-xs text-amber-700">
-                    Once changed, hit “Sync now” and the check will clear on
-                    the next compliance run.
+                    When it&apos;s done, confirm below — Driplin will re-read
+                    the controller and tell you whether it now matches.
                   </p>
+                  <ConfirmFixForm
+                    action={confirmManualFix}
+                    controllerId={c.id}
+                    propertyId={property.id}
+                  />
                 </div>
               )}
+
+              {(() => {
+                const mine = (confirmations ?? []).filter(
+                  (f) => f.controller_id === c.id
+                );
+                if (mine.length === 0) return null;
+                return (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Manual fix history
+                    </p>
+                    <ul className="mt-2 space-y-1.5">
+                      {mine.map((f) => (
+                        <li key={f.id} className="text-sm text-slate-600">
+                          <span
+                            className={`mr-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+                              f.verified === true
+                                ? "bg-green-50 text-green-800"
+                                : f.verified === false
+                                  ? "bg-red-50 text-red-700"
+                                  : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {f.verified === true
+                              ? "Verified"
+                              : f.verified === false
+                                ? "Still failing"
+                                : "Not checked"}
+                          </span>
+                          {f.confirmed_by_name}
+                          {f.confirmed_via === "vendor" ? " (vendor)" : ""} ·{" "}
+                          {new Date(f.created_at).toLocaleString("en-US", {
+                            timeZone: "America/Chicago",
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                          {f.note ? ` · “${f.note}”` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })()}
               {cached?.fetched_at && (
                 <p className="mt-2 text-xs text-slate-400">
                   Schedule last synced{" "}

@@ -287,3 +287,145 @@ export async function runComplianceForOrg(
 
   return summary;
 }
+
+/**
+ * Re-read ONE controller and judge it against its city's confirmed
+ * stage, updating its stored status.
+ *
+ * Used when somebody says they have fixed a controller by hand: we go
+ * and look rather than taking their word for it. A claim is not proof,
+ * and being able to check it is the whole advantage of being connected
+ * to the controller in the first place.
+ */
+export interface SingleControllerCheck {
+  ok: boolean;
+  /** Null when we could not judge (city rules unconfirmed, bad data). */
+  compliant: boolean | null;
+  /** What is still wrong, in the manager's words. */
+  remainingProblems: string[];
+  message: string;
+  propertyId?: string;
+  propertyName?: string;
+  orgId?: string;
+}
+
+export async function verifyControllerNow(
+  supabase: SupabaseClient,
+  controllerId: string
+): Promise<SingleControllerCheck> {
+  const { data: c } = await supabase
+    .from("controllers")
+    .select(
+      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction)"
+    )
+    .eq("id", controllerId)
+    .single();
+  if (!c) {
+    return {
+      ok: false,
+      compliant: null,
+      remainingProblems: [],
+      message: "Controller not found.",
+    };
+  }
+  const property = Array.isArray(c.properties) ? c.properties[0] : c.properties;
+  if (!property) {
+    return {
+      ok: false,
+      compliant: null,
+      remainingProblems: [],
+      message: "Controller is not attached to a property.",
+    };
+  }
+  const base = {
+    propertyId: property.id as string,
+    propertyName: property.name as string,
+    orgId: c.org_id as string,
+  };
+
+  // Pull the controller's current schedule before judging it.
+  const sync = await syncControllerById(supabase, controllerId);
+
+  const { data: cached } = await supabase
+    .from("cached_schedules")
+    .select("schedule")
+    .eq("controller_id", controllerId)
+    .single();
+  const programs: ScheduleProgram[] =
+    (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
+
+  const digit = getWateringDigit(property.street_number);
+  if (digit === null) {
+    return {
+      ...base,
+      ok: false,
+      compliant: null,
+      remainingProblems: [],
+      message: "This property's street number is not a valid address number.",
+    };
+  }
+
+  const jurisdictionId = property.jurisdiction ?? "austin";
+  const { data: stageRow } = await supabase
+    .from("drought_stage_status")
+    .select("current_stage")
+    .eq("jurisdiction", jurisdictionId)
+    .maybeSingle();
+  const stage = (stageRow?.current_stage ?? 0) as DroughtStage;
+
+  const result = evaluateCompliance(programs, digit, stage, jurisdictionId);
+
+  const status = !result.certified
+    ? "unknown"
+    : result.compliant
+      ? "compliant"
+      : "needs_manual_fix";
+
+  await supabase
+    .from("controllers")
+    .update({
+      compliance_status: status,
+      compliance_detail: {
+        rules: result.rulesSnapshot,
+        findings: result.findings,
+        manualInstructions: result.manualInstructions,
+        uncertified: !result.certified,
+        officialUrl: result.officialUrl,
+      },
+      compliance_checked_at: new Date().toISOString(),
+    })
+    .eq("id", controllerId);
+
+  if (!result.certified) {
+    return {
+      ...base,
+      ok: true,
+      compliant: null,
+      remainingProblems: [],
+      message: `Recorded. Driplin has not confirmed ${result.rulesSnapshot.jurisdictionName}'s published schedule, so it cannot check this controller against it.`,
+    };
+  }
+
+  if (result.compliant) {
+    return {
+      ...base,
+      ok: true,
+      compliant: true,
+      remainingProblems: [],
+      message: sync.ok
+        ? `Verified — ${c.name} now matches the ${result.rulesSnapshot.stageName} rules.`
+        : `Recorded. We could not reach ${c.name} just now, but its last known schedule matches the ${result.rulesSnapshot.stageName} rules.`,
+    };
+  }
+
+  const problems = result.findings.flatMap((f) =>
+    f.problems.map((p) => `${f.programName}: ${p}`)
+  );
+  return {
+    ...base,
+    ok: true,
+    compliant: false,
+    remainingProblems: problems,
+    message: `Recorded, but ${c.name} still does not match the ${result.rulesSnapshot.stageName} rules.`,
+  };
+}
