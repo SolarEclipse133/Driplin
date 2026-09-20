@@ -52,6 +52,44 @@ export interface IndicatorReading {
 }
 
 /**
+ * One documented trigger level: a reading below `below` historically
+ * corresponds to `stage`. Declaring these as data (rather than burying
+ * them in an if-chain) lets the trend projection ask "which threshold
+ * would we cross next?" for any city, without knowing the city.
+ */
+export interface IndicatorThreshold {
+  stage: DroughtStage;
+  below: number;
+}
+
+/**
+ * Which stage a reading corresponds to, given a city's thresholds.
+ * Most severe matching stage wins; no match means stage 0.
+ */
+export function stageFromThresholds(
+  thresholds: IndicatorThreshold[],
+  value: number
+): DroughtStage {
+  return thresholds
+    .filter((t) => value < t.below)
+    .reduce<DroughtStage>((worst, t) => (t.stage > worst ? t.stage : worst), 0);
+}
+
+/**
+ * The next trigger level a falling reading would cross: the highest
+ * threshold still below the current value. Null when the reading is
+ * already past every documented level.
+ */
+export function nextThresholdBelow(
+  thresholds: IndicatorThreshold[],
+  value: number
+): IndicatorThreshold | null {
+  const candidates = thresholds.filter((t) => t.below < value);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((a, b) => (b.below > a.below ? b : a));
+}
+
+/**
  * An automated leading indicator for a city (lake storage, aquifer
  * level). It NEVER changes the active stage — it only suggests one, so
  * an admin can verify against the city's official declaration.
@@ -62,11 +100,15 @@ export interface IndicatorConfig {
   label: string;
   unit: string;
   sourceUrl: string;
+  /** Documented trigger levels for this city, most severe lowest. */
+  thresholds: IndicatorThreshold[];
   /** Which stage this reading historically corresponds to. */
   suggestStage(value: number): DroughtStage;
   fetchReading(): Promise<IndicatorReading>;
   /** Why a single crossing isn't a stage change; shown in the alert. */
   caveat: string;
+  /** How to phrase a projected crossing, e.g. "falling toward". */
+  decliningVerb?: string;
 }
 
 export interface Jurisdiction {

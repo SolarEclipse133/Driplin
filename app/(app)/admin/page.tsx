@@ -7,6 +7,7 @@ import {
   getJurisdiction,
 } from "@/lib/jurisdictions";
 import { PullIndicatorForm, ConfirmStageForm } from "@/components/admin-forms";
+import { analyzeTrend } from "@/lib/indicators/trend";
 import { acknowledgeAlert, confirmStage, pullIndicatorNow } from "./actions";
 
 function centralTime(iso: string | null | undefined): string {
@@ -36,9 +37,15 @@ export default async function AdminPage() {
       "jurisdiction, current_stage, confirmed_at, source_link, raw_indicator_value, raw_indicator_text, raw_indicator_read_at, profiles(full_name)"
     );
 
+  const { data: readings } = await supabase
+    .from("indicator_readings")
+    .select("jurisdiction, value, read_at, reading_date")
+    .order("reading_date", { ascending: false })
+    .limit(200);
+
   const { data: openAlerts } = await supabase
     .from("alerts")
-    .select("id, message, severity, created_at, jurisdiction")
+    .select("id, message, severity, created_at, jurisdiction, type")
     .eq("acknowledged", false)
     .is("org_id", null)
     .order("created_at", { ascending: false });
@@ -63,17 +70,32 @@ export default async function AdminPage() {
           {openAlerts!.map((a) => (
             <li
               key={a.id}
-              className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between"
+              className={`flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                a.type === "early_warning"
+                  ? "border-slate-200 bg-white"
+                  : "border-amber-200 bg-amber-50"
+              }`}
             >
               <div>
-                <p className="text-sm text-amber-900">{a.message}</p>
-                <p className="mt-1 text-xs text-amber-700">
+                {a.type === "early_warning" && (
+                  <span className="mb-1 inline-block rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800">
+                    Early warning · estimate
+                  </span>
+                )}
+                <p
+                  className={`text-sm ${a.type === "early_warning" ? "text-slate-700" : "text-amber-900"}`}
+                >
+                  {a.message}
+                </p>
+                <p
+                  className={`mt-1 text-xs ${a.type === "early_warning" ? "text-slate-500" : "text-amber-700"}`}
+                >
                   {centralTime(a.created_at)}
                 </p>
               </div>
               <form action={acknowledgeAlert}>
                 <input type="hidden" name="alert_id" value={a.id} />
-                <button className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100">
+                <button className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
                   Acknowledge
                 </button>
               </form>
@@ -170,6 +192,30 @@ export default async function AdminPage() {
                         one now. Source: {j.indicator.label}.
                       </p>
                     )}
+                    {(() => {
+                      const points = (readings ?? [])
+                        .filter((r) => r.jurisdiction === j.id)
+                        .map((r) => ({
+                          value: Number(r.value),
+                          readAt: r.read_at as string,
+                        }));
+                      const t = analyzeTrend(points, j.indicator!.thresholds);
+                      return (
+                        <p
+                          className={`mt-3 rounded-md px-3 py-2 text-xs ${
+                            t.warn
+                              ? "bg-sky-50 text-sky-900"
+                              : "bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          <span className="font-medium">
+                            Trend ({points.length} reading
+                            {points.length === 1 ? "" : "s"} stored):
+                          </span>{" "}
+                          {t.explanation}
+                        </p>
+                      );
+                    })()}
                     <PullIndicatorForm
                       action={pullIndicatorNow.bind(null, j.id)}
                       label={j.name}

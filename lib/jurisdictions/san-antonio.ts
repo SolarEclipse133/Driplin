@@ -29,7 +29,12 @@
 
 import { Weekday } from "@/lib/controllers/types";
 import { fetchJ17TenDayAverage } from "@/lib/indicators/j17";
-import { DroughtStage, Jurisdiction, TimeWindow } from "./types";
+import {
+  IndicatorThreshold,
+  Jurisdiction,
+  stageFromThresholds,
+  TimeWindow,
+} from "./types";
 
 const DAY_BY_DIGIT: Record<number, Weekday[]> = {
   0: ["MON"], 1: ["MON"],
@@ -59,11 +64,11 @@ const noWatering: Record<number, Weekday[]> = {
  * J-17 index well 10-day average thresholds, feet above mean sea level.
  * Below 660 → Stage 1, below 650 → Stage 2, below 640 → Stage 3.
  */
-export const J17_THRESHOLDS = {
-  stage1Feet: 660,
-  stage2Feet: 650,
-  stage3Feet: 640,
-} as const;
+export const J17_THRESHOLDS: IndicatorThreshold[] = [
+  { stage: 3, below: 640 },
+  { stage: 2, below: 650 },
+  { stage: 1, below: 660 },
+];
 
 export const SAN_ANTONIO: Jurisdiction = {
   id: "san_antonio",
@@ -118,12 +123,9 @@ export const SAN_ANTONIO: Jurisdiction = {
     label: "Edwards Aquifer J-17 index well (10-day average)",
     unit: "ft above mean sea level",
     sourceUrl: "https://www.edwardsaquifer.org/",
-    suggestStage(value: number): DroughtStage {
-      if (value < J17_THRESHOLDS.stage3Feet) return 3;
-      if (value < J17_THRESHOLDS.stage2Feet) return 2;
-      if (value < J17_THRESHOLDS.stage1Feet) return 1;
-      return 0;
-    },
+    thresholds: J17_THRESHOLDS,
+    suggestStage: (value: number) => stageFromThresholds(J17_THRESHOLDS, value),
+    decliningVerb: "dropping toward",
     fetchReading: fetchJ17TenDayAverage,
     caveat:
       "The Edwards Aquifer Authority's own stage declarations are separate from SAWS customer restrictions — SAWS customers have stayed in Stage 2 through an EAA Stage 3 announcement. Confirm against the SAWS drought page before changing the stage.",

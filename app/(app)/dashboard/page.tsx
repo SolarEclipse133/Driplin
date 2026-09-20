@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { StageBanner } from "@/components/stage-banner";
 import { RecheckButton } from "@/components/recheck-button";
 import { getJurisdiction } from "@/lib/jurisdictions";
+import { getEarlyWarningNotes } from "@/lib/indicators/notes";
+import { EarlyWarningNotes } from "@/components/early-warning-note";
 import { recheckCompliance } from "./actions";
 
 /**
@@ -107,9 +109,16 @@ export default async function DashboardPage() {
     ...new Set(rows.map((r) => r.jurisdiction ?? "austin")),
   ];
 
+  const earlyWarnings = await getEarlyWarningNotes(supabase, orgJurisdictions);
+
   return (
     <div>
       <StageBanner jurisdictionIds={orgJurisdictions} />
+      {earlyWarnings.length > 0 && (
+        <div className="mt-2">
+          <EarlyWarningNotes notes={earlyWarnings} />
+        </div>
+      )}
 
       {/* Metric cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

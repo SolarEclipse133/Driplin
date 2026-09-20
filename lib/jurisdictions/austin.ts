@@ -22,7 +22,12 @@
 
 import { Weekday } from "@/lib/controllers/types";
 import { fetchLcraCombinedStorage } from "@/lib/indicators/lcra";
-import { DroughtStage, Jurisdiction, TimeWindow } from "./types";
+import {
+  IndicatorThreshold,
+  Jurisdiction,
+  stageFromThresholds,
+  TimeWindow,
+} from "./types";
 
 const EVEN_TWICE: Weekday[] = ["THU", "SUN"];
 const ODD_TWICE: Weekday[] = ["WED", "SAT"];
@@ -53,10 +58,10 @@ const STANDARD_WINDOWS: TimeWindow[] = [
  * LCRA combined-storage thresholds (acre-feet): below 1.4M historically
  * corresponds to Stage 1, below 900K to Stage 2.
  */
-export const LCRA_THRESHOLDS = {
-  stage1AcreFeet: 1_400_000,
-  stage2AcreFeet: 900_000,
-} as const;
+export const LCRA_THRESHOLDS: IndicatorThreshold[] = [
+  { stage: 2, below: 900_000 },
+  { stage: 1, below: 1_400_000 },
+];
 
 export const AUSTIN: Jurisdiction = {
   id: "austin",
@@ -110,11 +115,9 @@ export const AUSTIN: Jurisdiction = {
     label: "LCRA combined storage (Lakes Travis + Buchanan)",
     unit: "acre-feet",
     sourceUrl: "https://hydrometdata.lcra.org/",
-    suggestStage(value: number): DroughtStage {
-      if (value < LCRA_THRESHOLDS.stage2AcreFeet) return 2;
-      if (value < LCRA_THRESHOLDS.stage1AcreFeet) return 1;
-      return 0;
-    },
+    thresholds: LCRA_THRESHOLDS,
+    suggestStage: (value: number) => stageFromThresholds(LCRA_THRESHOLDS, value),
+    decliningVerb: "declining toward",
     fetchReading: fetchLcraCombinedStorage,
     caveat:
       "Recovery to Conservation Stage requires a sustained multi-month projected recovery above 1.4 million acre-feet, not a single day crossing back over the line.",
