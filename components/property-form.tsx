@@ -13,6 +13,8 @@ type PropertyValues = {
   zip: string;
   unit_count: number | "";
   jurisdiction: string;
+  property_class: string;
+  irrigation_type: string;
 };
 
 const EMPTY: PropertyValues = {
@@ -23,6 +25,8 @@ const EMPTY: PropertyValues = {
   zip: "",
   unit_count: "",
   jurisdiction: "austin",
+  property_class: "commercial",
+  irrigation_type: "automatic",
 };
 
 export function PropertyForm({
@@ -123,6 +127,53 @@ export function PropertyForm({
         )}
         <p className="mt-1 text-xs text-slate-500">
           The utility whose drought restrictions this property must follow.
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor="property_class" className="block text-sm font-medium">
+          Water account type
+        </label>
+        <select
+          id="property_class"
+          name="property_class"
+          value={values.property_class}
+          onChange={(e) =>
+            setValues((v) => ({ ...v, property_class: e.target.value }))
+          }
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        >
+          <option value="commercial">
+            Commercial or multifamily — HOA common area, apartments, offices
+          </option>
+          <option value="residential">Single-family residential</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Austin and Leander assign <strong>different watering days</strong> to
+          commercial and multifamily accounts. Match this to how the water bill
+          for this meter is classified — if you are unsure, check the bill.
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor="irrigation_type" className="block text-sm font-medium">
+          Irrigation on this meter
+        </label>
+        <select
+          id="irrigation_type"
+          name="irrigation_type"
+          value={values.irrigation_type}
+          onChange={(e) =>
+            setValues((v) => ({ ...v, irrigation_type: e.target.value }))
+          }
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        >
+          <option value="automatic">Automatic in-ground system</option>
+          <option value="drip_or_hose">Drip or hose-end sprinklers only</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Austin allows drip and hose-end watering on more days than automatic
+          systems.
         </p>
       </div>
 

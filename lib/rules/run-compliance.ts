@@ -19,6 +19,31 @@ import {
 import { syncControllerById } from "@/lib/controllers/sync";
 import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { getWateringDigit } from "./address";
+import {
+  DEFAULT_PROFILE,
+  type IrrigationType,
+  type PropertyClass,
+  type PropertyProfile,
+} from "@/lib/jurisdictions";
+
+/**
+ * Which published watering table applies to this property. Rows written
+ * before the class/type columns existed fall back to Driplin's own
+ * default: a commercial account on an automatic system.
+ */
+function profileOf(property: {
+  property_class?: string | null;
+  irrigation_type?: string | null;
+}): PropertyProfile {
+  return {
+    propertyClass:
+      (property.property_class as PropertyClass) ??
+      DEFAULT_PROFILE.propertyClass,
+    irrigationType:
+      (property.irrigation_type as IrrigationType) ??
+      DEFAULT_PROFILE.irrigationType,
+  };
+}
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
 import { estimateWeeklySavings } from "./savings";
@@ -60,7 +85,7 @@ export async function runComplianceForOrg(
   const { data: controllers, error } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction)"
+      "id, org_id, property_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type)"
     )
     .eq("org_id", orgId);
   if (error) {
@@ -94,7 +119,13 @@ export async function runComplianceForOrg(
     // 2. Evaluate against the confirmed stage for THIS property's city.
     const jurisdictionId = property.jurisdiction ?? "austin";
     const stage = stageByJurisdiction.get(jurisdictionId) ?? 0;
-    const result = evaluateCompliance(programs, digit, stage, jurisdictionId);
+    const result = evaluateCompliance(
+      programs,
+      digit,
+      stage,
+      jurisdictionId,
+      profileOf(property)
+    );
 
     // Cities whose published schedule we haven't been able to confirm:
     // report honestly instead of judging against a guess.
@@ -316,7 +347,7 @@ export async function verifyControllerNow(
   const { data: c } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction)"
+      "id, org_id, vendor, vendor_device_id, name, properties(id, name, street_number, jurisdiction, property_class, irrigation_type)"
     )
     .eq("id", controllerId)
     .single();
@@ -373,7 +404,13 @@ export async function verifyControllerNow(
     .maybeSingle();
   const stage = (stageRow?.current_stage ?? 0) as DroughtStage;
 
-  const result = evaluateCompliance(programs, digit, stage, jurisdictionId);
+  const result = evaluateCompliance(
+    programs,
+    digit,
+    stage,
+    jurisdictionId,
+    profileOf(property)
+  );
 
   const status = !result.certified
     ? "unknown"

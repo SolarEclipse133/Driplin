@@ -25,19 +25,33 @@
 import { Weekday } from "@/lib/controllers/types";
 import { Jurisdiction, StageRule, TimeWindow } from "./types";
 
-/** Phase 2: one day a week by address digit. */
-const PHASE_2_DAYS: Record<number, Weekday[]> = {
-  0: ["THU"],
-  1: ["TUE"],
-  2: ["MON"],
-  3: ["SUN"],
-  4: ["MON"],
-  5: ["TUE"],
-  6: ["WED"],
-  7: ["SUN"],
-  8: ["SAT"],
-  9: ["FRI"],
-};
+/**
+ * Leander splits Phase 2 by property class, exactly as Austin does.
+ *
+ * Source: City of Leander Phase 2 water conservation notice.
+ *   Residential : 1,5,9 -> Friday   · 2,4,6,8 -> Wednesday · 0,3,7 -> Sunday
+ *   Commercial  : 1,5,9 -> Tuesday  · 2,4,6,8 -> Saturday  · 0,3,7 -> Thursday
+ *
+ * Leander states the digit is taken from "the address where your water
+ * meter is located" — which for an HOA common area is the irrigation
+ * meter's own service address, not any homeowner's.
+ *
+ * Phase 2 covers automatic systems, hose-end sprinklers, soaker hoses
+ * and drip alike, so irrigation type makes no difference here.
+ */
+function leanderDays(
+  ones: Weekday[],
+  evens: Weekday[],
+  zeros: Weekday[]
+): Record<number, Weekday[]> {
+  return {
+    0: zeros, 1: ones, 2: evens, 3: zeros, 4: evens,
+    5: ones, 6: evens, 7: zeros, 8: evens, 9: ones,
+  };
+}
+
+const PHASE_2_RESIDENTIAL = leanderDays(["FRI"], ["WED"], ["SUN"]);
+const PHASE_2_COMMERCIAL = leanderDays(["TUE"], ["SAT"], ["THU"]);
 
 const UNKNOWN_DAYS: Record<number, Weekday[]> = {
   0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [],
@@ -78,10 +92,24 @@ export const LEANDER: Jurisdiction = {
     1: pending("Phase 1"),
     2: {
       name: "Phase 2",
-      daysByDigit: PHASE_2_DAYS,
+      daysByDigit: PHASE_2_COMMERCIAL,
       allowedWindows: PHASE_2_WINDOWS,
       summary:
-        "One watering day a week by address digit, midnight–7 a.m. or 7 p.m.–midnight.",
+        "One watering day a week by the meter address digit, midnight–7 a.m. or 7 p.m.–midnight.",
+      variants: {
+        residential: {
+          daysByDigit: PHASE_2_RESIDENTIAL,
+          allowedWindows: PHASE_2_WINDOWS,
+          summary:
+            "Residential: one day a week by meter address — 1/5/9 Friday, 2/4/6/8 Wednesday, 0/3/7 Sunday — midnight–7 a.m. or 7 p.m.–midnight.",
+        },
+        commercial: {
+          daysByDigit: PHASE_2_COMMERCIAL,
+          allowedWindows: PHASE_2_WINDOWS,
+          summary:
+            "Commercial: one day a week by meter address — 1/5/9 Tuesday, 2/4/6/8 Saturday, 0/3/7 Thursday — midnight–7 a.m. or 7 p.m.–midnight.",
+        },
+      },
       verified: true,
     },
     3: pending("Phase 3"),

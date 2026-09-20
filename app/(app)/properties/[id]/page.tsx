@@ -2,6 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getWateringDigit } from "@/lib/rules/address";
+import {
+  getJurisdiction,
+  resolveSchedule,
+  type DroughtStage,
+} from "@/lib/jurisdictions";
 import { getAccountClient } from "@/lib/controllers/factory";
 import { ControllerError, ScheduleProgram, WEEKDAYS } from "@/lib/controllers/types";
 import { VendorConnectForm } from "@/components/vendor-connect-form";
@@ -52,10 +57,20 @@ export default async function PropertyDetailPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, state, zip, unit_count")
+    .select("id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, property_class, irrigation_type")
     .eq("id", id)
     .single();
   if (!property) notFound();
+
+  // The stage in force for this property's city, so the header can show
+  // the watering days that actually apply to it — which in Austin and
+  // Leander depend on the account class, not just the address.
+  const { data: stageRow } = await supabase
+    .from("drought_stage_status")
+    .select("current_stage")
+    .eq("jurisdiction", property.jurisdiction ?? "austin")
+    .maybeSingle();
+  const stageForProperty = (stageRow?.current_stage ?? 0) as DroughtStage;
 
   const { data: confirmations } = await supabase
     .from("manual_fix_confirmations")
@@ -152,6 +167,34 @@ export default async function PropertyDetailPage({
             {property.zip} · {property.unit_count}{" "}
             {property.unit_count === 1 ? "unit" : "units"} · Watering digit:{" "}
             {getWateringDigit(property.street_number) ?? "?"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {property.property_class === "residential"
+              ? "Single-family residential"
+              : "Commercial / multifamily"}{" "}
+            account ·{" "}
+            {property.irrigation_type === "drip_or_hose"
+              ? "drip or hose-end"
+              : "automatic system"}
+            {" — "}
+            <span className="text-slate-600">
+              {
+                resolveSchedule(
+                  getJurisdiction(property.jurisdiction).stages[
+                    stageForProperty
+                  ],
+                  {
+                    propertyClass:
+                      (property.property_class as "residential" | "commercial") ??
+                      "commercial",
+                    irrigationType:
+                      (property.irrigation_type as
+                        | "automatic"
+                        | "drip_or_hose") ?? "automatic",
+                  }
+                ).summary
+              }
+            </span>
           </p>
         </div>
         <Link

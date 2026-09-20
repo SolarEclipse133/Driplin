@@ -15,15 +15,68 @@ export interface TimeWindow {
   end: string;
 }
 
-export interface StageRule {
-  /** What this city calls the stage, e.g. "Conservation Stage", "Stage 2". */
-  name: string;
-  /** Allowed watering days per address last-digit (0–9). Empty = none. */
+/**
+ * How a utility classifies the ACCOUNT the irrigation meter sits on.
+ *
+ * This is not a detail. Austin and Leander both publish DIFFERENT
+ * watering days for commercial and multifamily accounts than for
+ * single-family residential ones, so getting it wrong sends a property
+ * to water on a day the city prohibits. HOA common areas, apartment
+ * communities and commercial sites are "commercial" — the class should
+ * match how the water bill for that meter is categorized.
+ */
+export type PropertyClass = "residential" | "commercial";
+
+/**
+ * What kind of irrigation is on the meter. Austin gives drip and
+ * hose-end sprinklers a more generous schedule than automatic in-ground
+ * systems, so this changes the answer too.
+ */
+export type IrrigationType = "automatic" | "drip_or_hose";
+
+export interface PropertyProfile {
+  propertyClass: PropertyClass;
+  irrigationType: IrrigationType;
+}
+
+/**
+ * Driplin's customers manage HOA common areas and commercial sites on
+ * automatic systems. That is the assumption when nothing says otherwise.
+ */
+export const DEFAULT_PROFILE: PropertyProfile = {
+  propertyClass: "commercial",
+  irrigationType: "automatic",
+};
+
+/** The part of a stage's rules that can vary by property profile. */
+export interface Schedule {
+  /** Allowed watering days per address last-digit (0-9). Empty = none. */
   daysByDigit: Record<number, Weekday[]>;
-  /** Times of day when automatic irrigation may run on an allowed day. */
+  /** Times of day when irrigation may run on an allowed day. */
   allowedWindows: TimeWindow[];
   /** One-line description shown to managers and printed in reports. */
   summary: string;
+}
+
+/**
+ * Keys for per-profile overrides, most specific first:
+ *   "commercial:automatic"  - exact match
+ *   "commercial"            - any irrigation type on that class
+ * Anything not declared falls back to the stage's own base schedule.
+ */
+export type ScheduleVariantKey =
+  | `${PropertyClass}:${IrrigationType}`
+  | PropertyClass;
+
+export interface StageRule extends Schedule {
+  /** What this city calls the stage, e.g. "Conservation Stage", "Stage 2". */
+  name: string;
+  /**
+   * Schedules that differ by property class or irrigation type. Only
+   * cities that actually publish such a split declare these; everywhere
+   * else the base schedule applies to everyone.
+   */
+  variants?: Partial<Record<ScheduleVariantKey, Schedule>>;
   /**
    * False when these rules have NOT been confirmed against the city's
    * published ordinance. Driplin will never auto-push a schedule based
@@ -39,6 +92,28 @@ export interface StageRule {
    * would be worse than admitting we don't know it.
    */
   scheduleUnknown?: boolean;
+}
+
+/**
+ * The schedule that actually applies to one property under one stage.
+ * Checks the exact class+type override, then a class-wide one, then
+ * falls back to the stage's base schedule.
+ */
+export function resolveSchedule(
+  rule: StageRule,
+  profile: PropertyProfile = DEFAULT_PROFILE
+): Schedule {
+  const exact = rule.variants?.[
+    `${profile.propertyClass}:${profile.irrigationType}` as ScheduleVariantKey
+  ];
+  if (exact) return exact;
+  const byClass = rule.variants?.[profile.propertyClass];
+  if (byClass) return byClass;
+  return {
+    daysByDigit: rule.daysByDigit,
+    allowedWindows: rule.allowedWindows,
+    summary: rule.summary,
+  };
 }
 
 export interface IndicatorReading {

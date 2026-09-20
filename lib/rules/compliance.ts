@@ -7,9 +7,12 @@
 
 import { ScheduleProgram, Weekday, WEEKDAYS } from "@/lib/controllers/types";
 import {
+  DEFAULT_PROFILE,
   DroughtStage,
-  getJurisdiction,
+  PropertyProfile,
   TimeWindow,
+  getJurisdiction,
+  resolveSchedule,
 } from "@/lib/jurisdictions";
 
 export interface ProgramFinding {
@@ -49,6 +52,9 @@ export interface ComplianceResult {
     allowedDays: Weekday[];
     allowedWindows: TimeWindow[];
     verified: boolean;
+    /** Which published table this judgement used — part of the audit trail. */
+    propertyClass: string;
+    irrigationType: string;
   };
 }
 
@@ -82,10 +88,23 @@ export function evaluateCompliance(
   programs: ScheduleProgram[],
   digit: number,
   stage: DroughtStage,
-  jurisdictionId: string
+  jurisdictionId: string,
+  // Austin and Leander publish different days for commercial and
+  // multifamily accounts than for residential ones, so the property's
+  // own profile decides which table applies.
+  profile: PropertyProfile = DEFAULT_PROFILE
 ): ComplianceResult {
   const jurisdiction = getJurisdiction(jurisdictionId);
-  const rule = jurisdiction.stages[stage];
+  const stageRule = jurisdiction.stages[stage];
+  const schedule = resolveSchedule(stageRule, profile);
+  // Everything below reads the RESOLVED schedule; only the stage's
+  // name and verification status come from the rule itself.
+  const rule = {
+    ...stageRule,
+    daysByDigit: schedule.daysByDigit,
+    allowedWindows: schedule.allowedWindows,
+    summary: schedule.summary,
+  };
   const allowedDays = rule.daysByDigit[digit] ?? [];
 
   const snapshot = {
@@ -98,6 +117,8 @@ export function evaluateCompliance(
     allowedDays,
     allowedWindows: rule.allowedWindows,
     verified: rule.verified,
+    propertyClass: profile.propertyClass,
+    irrigationType: profile.irrigationType,
   };
 
   // We don't know this city's day assignment — say so plainly rather

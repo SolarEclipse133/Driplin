@@ -29,24 +29,41 @@ import {
   TimeWindow,
 } from "./types";
 
-const EVEN_TWICE: Weekday[] = ["THU", "SUN"];
-const ODD_TWICE: Weekday[] = ["WED", "SAT"];
-const EVEN_ONCE: Weekday[] = ["SUN"];
-const ODD_ONCE: Weekday[] = ["SAT"];
+/**
+ * Austin publishes FOUR different schedules, split by who holds the
+ * account and what kind of irrigation is on it. Getting this wrong is
+ * not a rounding error: a commercial account told to water Sunday when
+ * the city says Tuesday is in violation on Driplin's instruction.
+ *
+ * Source: Austin Water, "Find Your Watering Day" (see officialUrl).
+ *   Residential  · automatic/manual : even THU, odd WED      (1 day)
+ *   Residential  · drip/hose-end    : even THU+SUN, odd WED+SAT (2 days)
+ *   Commercial & multifamily · automatic/manual : even TUE, odd FRI (1 day)
+ *   Commercial & multifamily · drip/hose-end    : TUE+FRI for all   (2 days)
+ *
+ * Note the commercial split is by EVEN/ODD, not by the specific digit —
+ * we still key by digit so every city shares one shape.
+ */
+function byParity(even: Weekday[], odd: Weekday[]): Record<number, Weekday[]> {
+  return {
+    0: even, 1: odd, 2: even, 3: odd, 4: even,
+    5: odd, 6: even, 7: odd, 8: even, 9: odd,
+  };
+}
 
-const twiceWeekly: Record<number, Weekday[]> = {
-  0: EVEN_TWICE, 1: ODD_TWICE, 2: EVEN_TWICE, 3: ODD_TWICE, 4: EVEN_TWICE,
-  5: ODD_TWICE, 6: EVEN_TWICE, 7: ODD_TWICE, 8: EVEN_TWICE, 9: ODD_TWICE,
-};
+function everyDigit(days: Weekday[]): Record<number, Weekday[]> {
+  return {
+    0: days, 1: days, 2: days, 3: days, 4: days,
+    5: days, 6: days, 7: days, 8: days, 9: days,
+  };
+}
 
-const onceWeekly: Record<number, Weekday[]> = {
-  0: EVEN_ONCE, 1: ODD_ONCE, 2: EVEN_ONCE, 3: ODD_ONCE, 4: EVEN_ONCE,
-  5: ODD_ONCE, 6: EVEN_ONCE, 7: ODD_ONCE, 8: EVEN_ONCE, 9: ODD_ONCE,
-};
+const RESIDENTIAL_AUTOMATIC = byParity(["THU"], ["WED"]);
+const RESIDENTIAL_DRIP = byParity(["THU", "SUN"], ["WED", "SAT"]);
+const COMMERCIAL_AUTOMATIC = byParity(["TUE"], ["FRI"]);
+const COMMERCIAL_DRIP = everyDigit(["TUE", "FRI"]);
 
-const noWatering: Record<number, Weekday[]> = {
-  0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [],
-};
+const noWatering = everyDigit([]);
 
 /** Automatic irrigation must finish by 10 a.m. or start after 7 p.m. */
 const STANDARD_WINDOWS: TimeWindow[] = [
@@ -72,35 +89,72 @@ export const AUSTIN: Jurisdiction = {
   stages: {
     0: {
       name: "Conservation Stage",
-      daysByDigit: twiceWeekly,
+      // Base = what Driplin's own customers almost always are. Every
+      // combination is declared below, so this is only a fallback.
+      daysByDigit: COMMERCIAL_AUTOMATIC,
       allowedWindows: STANDARD_WINDOWS,
       summary:
-        "Automatic irrigation up to twice a week on assigned days, before 10 a.m. or after 7 p.m.",
+        "Automatic irrigation once a week on the assigned day, before 10 a.m. or after 7 p.m.",
+      variants: {
+        "residential:automatic": {
+          daysByDigit: RESIDENTIAL_AUTOMATIC,
+          allowedWindows: STANDARD_WINDOWS,
+          summary:
+            "Residential automatic irrigation once a week — Thursday for even addresses, Wednesday for odd — before 10 a.m. or after 7 p.m.",
+        },
+        "residential:drip_or_hose": {
+          daysByDigit: RESIDENTIAL_DRIP,
+          allowedWindows: STANDARD_WINDOWS,
+          summary:
+            "Residential drip and hose-end watering twice a week — Thursday and Sunday for even addresses, Wednesday and Saturday for odd — before 10 a.m. or after 7 p.m.",
+        },
+        "commercial:automatic": {
+          daysByDigit: COMMERCIAL_AUTOMATIC,
+          allowedWindows: STANDARD_WINDOWS,
+          summary:
+            "Commercial and multifamily automatic irrigation once a week — Tuesday for even addresses, Friday for odd — before 10 a.m. or after 7 p.m.",
+        },
+        "commercial:drip_or_hose": {
+          daysByDigit: COMMERCIAL_DRIP,
+          allowedWindows: STANDARD_WINDOWS,
+          summary:
+            "Commercial and multifamily drip and hose-end watering on Tuesday and Friday, before 10 a.m. or after 7 p.m.",
+        },
+      },
       verified: true,
     },
     1: {
       name: "Stage 1",
-      daysByDigit: twiceWeekly,
+      daysByDigit: COMMERCIAL_AUTOMATIC,
       allowedWindows: STANDARD_WINDOWS,
       summary:
-        "Automatic irrigation up to twice a week on assigned days, before 10 a.m. or after 7 p.m.",
-      verified: true,
+        "Watering days are assigned by address, but Austin publishes its day tables only for the stage currently in force. Driplin flags these properties for review instead of correcting them.",
+      verified: false,
+      scheduleUnknown: true,
     },
     2: {
       name: "Stage 2",
-      daysByDigit: onceWeekly,
-      allowedWindows: STANDARD_WINDOWS,
+      daysByDigit: COMMERCIAL_AUTOMATIC,
+      // When Austin was last in Stage 2 the morning window was cut to
+      // "before 5 a.m." — recorded here, but the day table is not
+      // published while the city is in Conservation Stage.
+      allowedWindows: [
+        { start: "00:00", end: "05:00" },
+        { start: "19:00", end: "24:00" },
+      ],
       summary:
-        "Automatic irrigation once a week on the assigned day, before 10 a.m. or after 7 p.m.",
-      verified: true,
+        "Once a week on the assigned day, before 5 a.m. or after 7 p.m. Driplin has not been able to confirm Austin's Stage 2 day table, so these properties are flagged for review rather than corrected.",
+      verified: false,
+      scheduleUnknown: true,
     },
     3: {
       name: "Stage 3",
-      daysByDigit: onceWeekly,
+      daysByDigit: COMMERCIAL_AUTOMATIC,
       allowedWindows: STANDARD_WINDOWS,
       summary:
-        "Automatic irrigation once a week on the assigned day, before 10 a.m. or after 7 p.m. (details pending verification).",
+        "Austin does not publish its Stage 3 day table while the city is in Conservation Stage. Driplin flags these properties for review rather than correcting them.",
       verified: false,
+      scheduleUnknown: true,
     },
     4: {
       name: "Stage 4",

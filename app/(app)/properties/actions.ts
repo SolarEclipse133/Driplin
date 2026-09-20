@@ -22,6 +22,11 @@ function parseAndValidate(formData: FormData) {
     zip: String(formData.get("zip") ?? "").trim(),
     unit_count: Number(formData.get("unit_count")),
     jurisdiction: String(formData.get("jurisdiction") ?? "").trim(),
+    // Which published watering table applies. Austin and Leander assign
+    // commercial and multifamily accounts different days from
+    // residential ones, so a wrong value here means a wrong day.
+    property_class: String(formData.get("property_class") ?? "commercial").trim(),
+    irrigation_type: String(formData.get("irrigation_type") ?? "automatic").trim(),
   };
 
   // Blank selection means "work it out from the city name".
@@ -45,6 +50,10 @@ function parseAndValidate(formData: FormData) {
   if (!JURISDICTIONS.some((j) => j.id === values.jurisdiction))
     fieldErrors.jurisdiction =
       "Pick the city whose watering rules apply to this property.";
+  if (!["residential", "commercial"].includes(values.property_class))
+    fieldErrors.property_class = "Pick the water account type.";
+  if (!["automatic", "drip_or_hose"].includes(values.irrigation_type))
+    fieldErrors.irrigation_type = "Pick the irrigation type on this meter.";
 
   return { values, fieldErrors };
 }
