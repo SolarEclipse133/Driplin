@@ -7,6 +7,7 @@ import { ControllerError, ScheduleProgram, WEEKDAYS } from "@/lib/controllers/ty
 import { VendorConnectForm } from "@/components/vendor-connect-form";
 import { ManualFixPanel } from "@/components/manual-fix-panel";
 import { confirmManualFix } from "./confirm-actions";
+import { sendToVendor } from "./work-order-actions";
 import {
   addDemoController,
   connectVendorDevice,
@@ -61,6 +62,21 @@ export default async function PropertyDetailPage({
     .eq("property_id", id)
     .order("created_at", { ascending: false })
     .limit(10);
+
+  // Vendors who service this property, plus any jobs already out.
+  const { data: vendorLinks } = await supabase
+    .from("vendor_properties")
+    .select("vendors(id, name, email)")
+    .eq("property_id", id);
+  const propertyVendors = (vendorLinks ?? [])
+    .map((l) => (Array.isArray(l.vendors) ? l.vendors[0] : l.vendors))
+    .filter((v): v is { id: string; name: string; email: string | null } => !!v);
+
+  const { data: openOrders } = await supabase
+    .from("work_orders")
+    .select("id, controller_id")
+    .eq("property_id", id)
+    .eq("status", "open");
 
   const { data: controllers } = await supabase
     .from("controllers")
@@ -258,6 +274,12 @@ export default async function PropertyDetailPage({
                   ((c.compliance_detail as {
                     manualInstructions?: string[];
                   } | null)?.manualInstructions ?? [])
+                }
+                sendToVendorAction={sendToVendor}
+                vendors={propertyVendors}
+                openOrderCount={
+                  (openOrders ?? []).filter((o) => o.controller_id === c.id)
+                    .length
                 }
               />
 

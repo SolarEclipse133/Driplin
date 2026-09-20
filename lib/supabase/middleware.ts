@@ -7,8 +7,10 @@ import { NextResponse, type NextRequest } from "next/server";
  * require login.
  */
 
-// Pages that do NOT require login.
-const PUBLIC_PATHS = ["/login", "/signup"];
+// Pages that do NOT require login. /fix/<token> is the vendor's
+// no-login work-order page: it authenticates with the token in the URL
+// and exposes exactly one job, so it must bypass the session check.
+const PUBLIC_PATHS = ["/login", "/signup", "/fix/"];
 
 export async function updateSession(request: NextRequest) {
   // Cron endpoints authenticate with CRON_SECRET inside the route

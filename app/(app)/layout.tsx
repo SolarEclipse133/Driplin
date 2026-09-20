@@ -61,6 +61,12 @@ export default async function AppLayout({
                 Properties
               </Link>
               <Link
+                href="/vendors"
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Vendors
+              </Link>
+              <Link
                 href="/settings"
                 className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               >

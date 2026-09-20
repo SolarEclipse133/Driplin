@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 import type { ConfirmFixState } from "@/app/(app)/properties/[id]/confirm-actions";
+import type { WorkOrderState } from "@/app/(app)/properties/[id]/work-order-actions";
+import { SendToVendor } from "./send-to-vendor";
 
 /**
  * The manual-fix instructions plus the "I've updated it" confirmation.
@@ -19,6 +21,9 @@ export function ManualFixPanel({
   vendorLabel,
   needsManualFix,
   instructions,
+  sendToVendorAction,
+  vendors,
+  openOrderCount,
 }: {
   action: (
     prev: ConfirmFixState,
@@ -29,6 +34,12 @@ export function ManualFixPanel({
   vendorLabel: string;
   needsManualFix: boolean;
   instructions: string[];
+  sendToVendorAction: (
+    prev: WorkOrderState,
+    formData: FormData
+  ) => Promise<WorkOrderState>;
+  vendors: { id: string; name: string; email: string | null }[];
+  openOrderCount: number;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     error: null,
@@ -87,6 +98,16 @@ export function ManualFixPanel({
             </button>
           </div>
         </form>
+      )}
+
+      {needsManualFix && (
+        <SendToVendor
+          action={sendToVendorAction}
+          controllerId={controllerId}
+          propertyId={propertyId}
+          vendors={vendors}
+          openOrderCount={openOrderCount}
+        />
       )}
 
       {state.error && (
