@@ -8,6 +8,7 @@ import { DEMO_INITIAL_PROGRAMS } from "@/lib/controllers/demo";
 import { syncControllerById } from "@/lib/controllers/sync";
 import { randomUUID } from "crypto";
 import { isValidStreetNumber } from "@/lib/rules/address";
+import { saveVendorApiKey } from "@/lib/controllers/credentials";
 
 export type ConnectFormState = { error: string | null; success: string | null };
 
@@ -61,10 +62,9 @@ export async function saveVendorKey(
     };
   }
 
-  const { error } = await supabase
-    .from("vendor_credentials")
-    .upsert({ org_id: orgId, vendor, api_key: apiKey }, { onConflict: "org_id,vendor" });
-  if (error) return { error: "Could not store the key.", success: null };
+  // Encrypted before it touches the database — see lib/crypto/secrets.
+  const saved = await saveVendorApiKey(supabase, orgId, vendor, apiKey);
+  if (!saved.ok) return { error: saved.error, success: null };
 
   revalidatePath(`/properties/${propertyId}`);
   return { error: null, success: `Connected: ${accountLabel}.` };

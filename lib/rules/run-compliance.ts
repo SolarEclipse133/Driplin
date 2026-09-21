@@ -19,6 +19,7 @@ import {
 import { syncControllerById } from "@/lib/controllers/sync";
 import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { meterFor } from "./meter";
+import { getVendorApiKey } from "@/lib/controllers/credentials";
 import {
   DEFAULT_PROFILE,
   type IrrigationType,
@@ -208,13 +209,8 @@ export async function runComplianceForOrg(
     // Vendor API key for the push (demo needs none).
     let apiKey: string | undefined;
     if (c.vendor !== "demo") {
-      const { data: cred } = await supabase
-        .from("vendor_credentials")
-        .select("api_key")
-        .eq("org_id", c.org_id)
-        .eq("vendor", c.vendor)
-        .single();
-      apiKey = cred?.api_key;
+      apiKey =
+        (await getVendorApiKey(supabase, c.org_id, c.vendor)) ?? undefined;
     }
 
     try {

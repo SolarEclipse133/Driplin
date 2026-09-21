@@ -15,6 +15,8 @@ import { confirmManualFix } from "./confirm-actions";
 import { sendToVendor } from "./work-order-actions";
 import { signedPhotoUrl } from "@/lib/photos/store";
 import { meterFor } from "@/lib/rules/meter";
+import { getVendorApiKey } from "@/lib/controllers/credentials";
+import { SecretKeyError } from "@/lib/crypto/secrets";
 import { MeterAddressForm } from "@/components/meter-address-form";
 import {
   addDemoController,
@@ -57,6 +59,16 @@ export default async function PropertyDetailPage({
   // reading the clock here is fine — it runs per request, not per render).
   const reportTo = new Date();
   const reportFrom = new Date(reportTo.getTime() - 90 * 24 * 3600 * 1000);
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: viewerProfile } = await supabase
+    .from("profiles")
+    .select("org_id")
+    .eq("id", user?.id ?? "")
+    .maybeSingle();
+  const orgId = viewerProfile?.org_id as string | undefined;
 
   const { data: property } = await supabase
     .from("properties")
@@ -132,17 +144,29 @@ export default async function PropertyDetailPage({
 
   const vendorSections = await Promise.all(
     CONNECTABLE.map(async (v) => {
-      const { data: cred } = await supabase
-        .from("vendor_credentials")
-        .select("api_key")
-        .eq("vendor", v.vendor)
-        .maybeSingle();
+      // Decrypted through the one module that knows how; `upgrade` is
+      // off because a page render has no business writing to the
+      // database. Stale plaintext rows are upgraded by the next sync.
+      let apiKey: string | null = null;
+      let keyError: string | null = null;
+      if (orgId) {
+        try {
+          apiKey = await getVendorApiKey(supabase, orgId, v.vendor, {
+            upgrade: false,
+          });
+        } catch (err) {
+          keyError =
+            err instanceof SecretKeyError
+              ? err.message
+              : "Stored credential could not be read.";
+        }
+      }
 
       let devices: { vendorDeviceId: string; name: string }[] | null = null;
-      let apiError: string | null = null;
-      if (cred?.api_key) {
+      let apiError: string | null = keyError;
+      if (apiKey) {
         try {
-          const all = await getAccountClient(v.vendor, cred.api_key).listDevices();
+          const all = await getAccountClient(v.vendor, apiKey).listDevices();
           const connectedIds = new Set(
             (controllers ?? [])
               .filter((c) => c.vendor === v.vendor)
@@ -156,7 +180,7 @@ export default async function PropertyDetailPage({
               : `Could not reach ${v.label} right now.`;
         }
       }
-      return { ...v, hasCredential: !!cred?.api_key, devices, apiError };
+      return { ...v, hasCredential: !!apiKey || !!keyError, devices, apiError };
     })
   );
 

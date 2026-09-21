@@ -84,6 +84,18 @@ uses a built-in simulated Hydrawise controller, so nothing is needed now.
 
 ## 6. Internal settings (needed for feature 4)
 
+- `CREDENTIALS_ENCRYPTION_KEY`: encrypts the Rachio and Hydrawise keys your
+  customers hand over, so a database dump or a stray backup never contains a
+  working key to someone's irrigation account. Generate one with:
+
+  ```
+  openssl rand -base64 32
+  ```
+
+  **Keep it somewhere safe.** If it is lost, every stored key becomes
+  unreadable and every customer has to reconnect. If it is left unset,
+  Driplin refuses to store new keys rather than storing them in the clear.
+
 - `CRON_SECRET`: a random password so only Vercel's scheduler can trigger
   the nightly LCRA data pull. Make one at
   https://generate-secret.vercel.app/32 (refresh for a new one) and paste
@@ -112,6 +124,7 @@ uses a built-in simulated Hydrawise controller, so nothing is needed now.
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the anon/publishable key |
    | `SUPABASE_SERVICE_ROLE_KEY` | the service_role key (secret — this is its proper home) |
    | `CRON_SECRET` | a random password — generate at https://generate-secret.vercel.app/32 |
+   | `CREDENTIALS_ENCRYPTION_KEY` | `openssl rand -base64 32` — encrypts customers' vendor API keys |
    | `ADMIN_ALERT_EMAIL` | your email, for LCRA threshold alerts |
 
    Optional, for turning on real notifications later: `RESEND_API_KEY`,

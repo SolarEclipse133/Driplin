@@ -5,6 +5,7 @@
  * keeps working when a vendor API is unreachable.
  */
 
+import { getVendorApiKey } from "./credentials";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getController } from "./factory";
 import { ControllerError, ControllerVendor } from "./types";
@@ -23,13 +24,12 @@ export async function syncControllerById(
   // Vendor API key (demo controllers don't need one).
   let apiKey: string | undefined;
   if (controller.vendor !== "demo") {
-    const { data: cred } = await supabase
-      .from("vendor_credentials")
-      .select("api_key")
-      .eq("org_id", controller.org_id)
-      .eq("vendor", controller.vendor)
-      .single();
-    apiKey = cred?.api_key;
+    apiKey =
+      (await getVendorApiKey(
+        supabase,
+        controller.org_id,
+        controller.vendor
+      )) ?? undefined;
   }
 
   try {
