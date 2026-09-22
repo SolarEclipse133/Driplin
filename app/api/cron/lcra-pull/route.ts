@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runAllIndicatorChecks } from "@/lib/indicators/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
+import { upgradeLegacyCredentials } from "@/lib/controllers/credentials";
 
 export const dynamic = "force-dynamic";
 // 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
@@ -35,6 +36,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Sweep any credential still stored in plaintext from before
+  // encryption existed. Cheap, idempotent, and the only thing that
+  // makes "credentials are encrypted at rest" true of every row rather
+  // than only the ones that happen to get used.
+  const credentials = await upgradeLegacyCredentials(supabase);
+
   const indicators = await runAllIndicatorChecks(supabase);
 
   const { data: orgs } = await supabase.from("organizations").select("id");
@@ -43,5 +50,5 @@ export async function GET(request: NextRequest) {
     complianceRuns[org.id] = await runComplianceForOrg(supabase, org.id);
   }
 
-  return NextResponse.json({ indicators, complianceRuns });
+  return NextResponse.json({ credentials, indicators, complianceRuns });
 }

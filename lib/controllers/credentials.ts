@@ -2,7 +2,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   decryptSecret,
+  encryptionAvailable,
   encryptSecret,
+  isEncrypted,
   SecretKeyError,
 } from "@/lib/crypto/secrets";
 
@@ -112,4 +114,55 @@ export async function vendorsWithCredentials(
     .select("vendor")
     .eq("org_id", orgId);
   return new Set((data ?? []).map((r) => r.vendor as string));
+}
+
+/**
+ * Re-encrypt any credential still stored as plaintext.
+ *
+ * The lazy upgrade in getVendorApiKey only fires when a key is
+ * actually used, and a key belonging to an account with no connected
+ * hardware yet is never used. Without this sweep, "credentials are
+ * encrypted" would be true only of the rows that happen to get read —
+ * which is not a guarantee worth making.
+ *
+ * Runs in the nightly job with the service-role client, so it sees
+ * every organization. Does nothing when no encryption key is
+ * configured, and never throws: a failure here must not take the
+ * nightly compliance run down with it.
+ */
+export async function upgradeLegacyCredentials(
+  supabase: SupabaseClient
+): Promise<{ upgraded: number; failed: number; skipped: string | null }> {
+  if (!encryptionAvailable()) {
+    return { upgraded: 0, failed: 0, skipped: "no encryption key configured" };
+  }
+
+  const { data, error } = await supabase
+    .from("vendor_credentials")
+    .select("id, org_id, vendor, api_key");
+  if (error || !data) {
+    return { upgraded: 0, failed: 0, skipped: "could not read credentials" };
+  }
+
+  let upgraded = 0;
+  let failed = 0;
+  for (const row of data) {
+    const stored = row.api_key as string;
+    if (isEncrypted(stored)) continue;
+    try {
+      const reEncrypted = encryptSecret(
+        stored,
+        aadFor(row.org_id as string, row.vendor as string)
+      );
+      const { error: writeError } = await supabase
+        .from("vendor_credentials")
+        .update({ api_key: reEncrypted })
+        .eq("id", row.id);
+      if (writeError) failed += 1;
+      else upgraded += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { upgraded, failed, skipped: null };
 }
