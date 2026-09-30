@@ -54,7 +54,96 @@ function profileOf(
 }
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
+import { varianceStatus, type Variance, type VarianceKind } from "./variance";
 import { estimateWeeklySavings } from "./savings";
+
+/**
+ * Tell someone a variance is about to lapse, or has become doubtful.
+ *
+ * Deliberately not every night. An alert that repeats for two weeks is
+ * one people filter, and this product's only real asset is that its
+ * alerts still get read. So it fires once, is re-raised only if it has
+ * not been acknowledged and a week has passed, and says exactly what
+ * will happen and when.
+ */
+async function raiseVarianceWarning(
+  supabase: SupabaseClient,
+  orgId: string,
+  property: { id: string; name: string },
+  vstatus: ReturnType<typeof varianceStatus>,
+  utility: string
+): Promise<void> {
+  const active = vstatus.active;
+  if (!active) return;
+
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const { data: recent } = await supabase
+    .from("alerts")
+    .select("id")
+    .eq("property_id", property.id)
+    .eq("type", "variance_expiring")
+    .gte("created_at", weekAgo)
+    .limit(1)
+    .maybeSingle();
+  if (recent) return;
+
+  const days = vstatus.daysUntilExpiry ?? 0;
+  const expiry =
+    days === 0
+      ? "expires today"
+      : `expires in ${days} day${days === 1 ? "" : "s"} (${active.expiresOn.slice(0, 10)})`;
+
+  const message = vstatus.stageAdvanced
+    ? `${property.name}: the drought stage has tightened since variance ${active.reference} was approved. ${utility} restricts which variances stay valid at stricter stages, so confirm it still applies. It ${expiry}.`
+    : `${property.name}: variance ${active.reference} ${expiry}. After that this property is held to ${utility}'s standard schedule again — renew it or change the controller before then.`;
+
+  await supabase.from("compliance_events").insert({
+    org_id: orgId,
+    property_id: property.id,
+    type: "variance_expiring",
+    summary: message,
+    details: {
+      reference: active.reference,
+      expiresOn: active.expiresOn,
+      daysUntilExpiry: days,
+      stageAdvanced: vstatus.stageAdvanced,
+    },
+  });
+
+  const { data: alert } = await supabase
+    .from("alerts")
+    .insert({
+      org_id: orgId,
+      property_id: property.id,
+      type: "variance_expiring",
+      // Doubtful beats merely soon: if the stage moved, the property may
+      // already be watering without cover.
+      severity: vstatus.stageAdvanced ? "critical" : "warning",
+      message,
+      details: { reference: active.reference, expiresOn: active.expiresOn },
+    })
+    .select("id, org_id, property_id, type, message, details")
+    .single();
+  if (alert) await dispatchAlertNotifications(supabase, alert);
+}
+
+/** A property_variances row as the rules engine wants it. */
+function toVariance(row: Record<string, unknown>): Variance {
+  return {
+    id: String(row.id),
+    kind: row.kind as VarianceKind,
+    reference: String(row.reference ?? ""),
+    approvedOn: String(row.approved_on ?? ""),
+    expiresOn: String(row.expires_on ?? ""),
+    allowedDays:
+      row.allowed_days === null || row.allowed_days === undefined
+        ? "ALL"
+        : (row.allowed_days as Variance["allowedDays"]),
+    allowedWindows: (row.allowed_windows as Variance["allowedWindows"]) ?? [],
+    approvedAtStage: Number(row.approved_at_stage ?? 0) as Variance["approvedAtStage"],
+    notes: (row.notes as string | null) ?? null,
+  };
+}
 
 export interface OrgComplianceSummary {
   checked: number;
@@ -101,6 +190,10 @@ export async function runComplianceForOrg(
     return summary;
   }
 
+  // A property with four controllers must not produce four identical
+  // variance alerts.
+  const variancesWarned = new Set<string>();
+
   for (const c of controllers ?? []) {
     const property = Array.isArray(c.properties) ? c.properties[0] : c.properties;
     if (!property) continue;
@@ -132,13 +225,48 @@ export async function runComplianceForOrg(
     // 2. Evaluate against the confirmed stage for THIS property's city.
     const jurisdictionId = property.jurisdiction ?? "austin";
     const stage = stageByJurisdiction.get(jurisdictionId) ?? 0;
+    // Any approved variance on this property. A Large Property
+    // variance is common for exactly Driplin's customers -- an HOA
+    // common area that cannot be fully watered inside the city's
+    // window -- and without this the property would be flagged every
+    // night while watering entirely legally.
+    const { data: varianceRows } = await supabase
+      .from("property_variances")
+      .select(
+        "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
+      )
+      .eq("property_id", property.id);
+    const variances = (varianceRows ?? []).map(toVariance);
+    const vstatus = varianceStatus(variances, stage as DroughtStage);
+
     const result = evaluateCompliance(
       programs,
       digit,
       stage,
       jurisdictionId,
-      profileOf(property, meter)
+      profileOf(property, meter),
+      vstatus.active
     );
+
+    // A lapsing or newly-doubtful variance is worth telling someone
+    // about, once, while there is still time to renew it. The day after
+    // it expires this property is judged on the city's standard
+    // schedule again -- and if its controller was set to the variance
+    // schedule, it waters illegally from that morning.
+    if (
+      vstatus.active &&
+      (vstatus.expiringSoon || vstatus.stageAdvanced) &&
+      !variancesWarned.has(property.id)
+    ) {
+      variancesWarned.add(property.id);
+      await raiseVarianceWarning(
+        supabase,
+        c.org_id,
+        property,
+        vstatus,
+        getJurisdiction(jurisdictionId).utility
+      );
+    }
 
     // Cities whose published schedule we haven't been able to confirm:
     // report honestly instead of judging against a guess.
@@ -222,6 +350,18 @@ export async function runComplianceForOrg(
         throw new ScheduleWriteNotSupportedError(
           c.vendor as ControllerVendor,
           `Driplin has not verified ${getJurisdiction(jurisdictionId).utility}'s published rules for ${result.rulesSnapshot.stageName}, so it will not change this schedule automatically`
+        );
+      }
+
+      // Second safety rule: a variance permits MORE than the city's
+      // default, and that permission is a customer assertion Driplin
+      // has not checked with the utility. Writing a wider schedule onto
+      // real hardware on that basis would make Driplin the cause of a
+      // violation if the approval does not say what was entered.
+      if (!result.safeToPush) {
+        throw new ScheduleWriteNotSupportedError(
+          c.vendor as ControllerVendor,
+          `This property waters under ${vstatus.active ? vstatus.active.reference : "an approved variance"}, which Driplin has not verified with ${getJurisdiction(jurisdictionId).utility}, so it will not widen this schedule automatically`
         );
       }
 

@@ -6,6 +6,8 @@
  */
 
 import { ScheduleProgram, Weekday, WEEKDAYS } from "@/lib/controllers/types";
+import type { Variance } from "./variance";
+import { describeVariance } from "./variance";
 import {
   DEFAULT_PROFILE,
   DroughtStage,
@@ -42,6 +44,22 @@ export interface ComplianceResult {
   certified: boolean;
   /** Where a manager checks the real schedule when we can't certify. */
   officialUrl: string;
+  /**
+   * True when an approved variance widened what this property may do.
+   * The verdict then rests on a document the CUSTOMER reported, not on
+   * anything Driplin read from the utility, so it is labelled wherever
+   * it is shown.
+   */
+  underVariance: boolean;
+  /**
+   * False when Driplin must not push a schedule to the controller.
+   * A variance permits MORE watering than the city's default, and that
+   * permission is a customer assertion. Writing a wider schedule onto
+   * real hardware on that basis would make Driplin the cause of a
+   * violation if the variance turns out not to say what was entered.
+   * So under a variance Driplin judges, and stops there.
+   */
+  safeToPush: boolean;
   /** Snapshot for the audit log. */
   rulesSnapshot: {
     jurisdictionId: string;
@@ -57,6 +75,8 @@ export interface ComplianceResult {
     propertyClass: string;
     irrigationType: string;
     noStreetAddress: boolean;
+    /** The approval this judgement relied on, if any. */
+    variance: string | null;
   };
 }
 
@@ -94,7 +114,12 @@ export function evaluateCompliance(
   // Austin and Leander publish different days for commercial and
   // multifamily accounts than for residential ones, so the property's
   // own profile decides which table applies.
-  profile: PropertyProfile = DEFAULT_PROFILE
+  profile: PropertyProfile = DEFAULT_PROFILE,
+  /**
+   * The variance in force, from varianceStatus(). When present it
+   * replaces the city's day and hour limits for this property only.
+   */
+  variance: Variance | null = null
 ): ComplianceResult {
   const jurisdiction = getJurisdiction(jurisdictionId);
   const stageRule = jurisdiction.stages[stage];
@@ -107,7 +132,28 @@ export function evaluateCompliance(
     allowedWindows: schedule.allowedWindows,
     summary: schedule.summary,
   };
-  const allowedDays = rule.daysByDigit[digit] ?? [];
+
+  // A variance replaces the city's limits for this property only. The
+  // approval letter is the authority here, so its days and hours are
+  // taken as written rather than intersected with the default table —
+  // the entire point of a variance is to permit what the table forbids.
+  const varianceDays =
+    variance === null
+      ? null
+      : variance.allowedDays === "ALL"
+        ? [...WEEKDAYS]
+        : variance.allowedDays;
+  const varianceWindows =
+    variance === null
+      ? null
+      : variance.allowedWindows.length > 0
+        ? variance.allowedWindows
+        : // The approval set no hours. Judge days only rather than
+          // inventing a window the utility never wrote.
+          [{ start: "00:00", end: "23:59" }];
+
+  const allowedDays = varianceDays ?? rule.daysByDigit[digit] ?? [];
+  const allowedWindows = varianceWindows ?? rule.allowedWindows;
 
   const snapshot = {
     jurisdictionId: jurisdiction.id,
@@ -117,22 +163,29 @@ export function evaluateCompliance(
     stageName: rule.name,
     digit,
     allowedDays,
-    allowedWindows: rule.allowedWindows,
+    allowedWindows: allowedWindows,
     verified: rule.verified,
     propertyClass: profile.propertyClass,
     irrigationType: profile.irrigationType,
     noStreetAddress: profile.noStreetAddress === true,
+    variance: variance ? describeVariance(variance) : null,
   };
 
   // We don't know this city's day assignment — say so plainly rather
   // than judging the schedule against a guess. That covers both a city
   // whose table we've never confirmed and a median in a city that
   // publishes no rule for areas without a street address.
-  if (!canJudge(stageRule, profile)) {
+  // An active variance makes the city's own table beside the point for
+  // this property: the approval letter states what it may do. So a
+  // property under a variance can still be judged even where Driplin
+  // has not confirmed the city's day assignment.
+  if (variance === null && !canJudge(stageRule, profile)) {
     return {
       compliant: false,
       certified: false,
       rulesVerified: false,
+      underVariance: variance !== null,
+      safeToPush: false,
       officialUrl: jurisdiction.officialUrl,
       findings: [],
       correctedPrograms: programs,
@@ -161,7 +214,7 @@ export function evaluateCompliance(
       continue;
     }
 
-    if (allowedDays.length === 0 || rule.allowedWindows.length === 0) {
+    if (allowedDays.length === 0 || allowedWindows.length === 0) {
       if (program.days.length > 0) {
         problems.push(
           `${rule.name} allows no automatic irrigation, but this program waters ${program.days.map(dayLabel).join(", ")}.`
@@ -184,18 +237,18 @@ export function evaluateCompliance(
 
       // Time-window check
       const startMin = toMinutes(program.startTime);
-      const inWindow = rule.allowedWindows.some((w) =>
+      const inWindow = allowedWindows.some((w) =>
         fitsWindow(startMin, program.durationMinutes, w)
       );
       let newStart = program.startTime;
       if (!inWindow) {
         problems.push(
-          `Runs at ${program.startTime} for ${program.durationMinutes} min; ${jurisdiction.utility} allows watering only ${describeWindows(rule.allowedWindows)}.`
+          `Runs at ${program.startTime} for ${program.durationMinutes} min; ${jurisdiction.utility} allows watering only ${describeWindows(allowedWindows)}.`
         );
-        newStart = pickStart(program.durationMinutes, rule.allowedWindows) ?? rule.allowedWindows[0].start;
+        newStart = pickStart(program.durationMinutes, allowedWindows) ?? allowedWindows[0].start;
         // Prefer an early-morning start over midnight where allowed.
         const fiveAm = toMinutes("05:00");
-        const earlyOk = rule.allowedWindows.some(
+        const earlyOk = allowedWindows.some(
           (w) => fitsWindow(fiveAm, program.durationMinutes, w)
         );
         if (newStart === "00:00" && earlyOk) newStart = "05:00";
@@ -225,6 +278,9 @@ export function evaluateCompliance(
     compliant: findings.length === 0,
     certified: true,
     rulesVerified: rule.verified,
+    underVariance: variance !== null,
+    // Never push a schedule that rests on a customer-reported approval.
+    safeToPush: variance === null,
     officialUrl: jurisdiction.officialUrl,
     findings,
     correctedPrograms: corrected,

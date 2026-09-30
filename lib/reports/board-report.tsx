@@ -48,6 +48,20 @@ export interface ReportData {
     sourceLink: string | null;
   };
   /**
+   * An approved variance in force over the period, if any.
+   *
+   * A board reading "compliant" while the property watered on a day the
+   * city's published schedule forbids deserves to know why. Leaving it
+   * out would make the report look either wrong or dishonest, and this
+   * report exists to be shown to people who did not run it.
+   */
+  variance: {
+    description: string;
+    utility: string;
+    expiringSoon: boolean;
+    stageAdvanced: boolean;
+  } | null;
+  /**
    * Photos taken when someone confirmed a hands-on fix. Optional
    * throughout: most reports will have none, and the appendix is
    * simply left out then.
@@ -90,6 +104,17 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 7.5, color: "#64748b", textTransform: "uppercase" },
   statValue: { fontSize: 16, fontFamily: "Helvetica-Bold", marginTop: 3 },
+  varianceBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 6,
+    backgroundColor: "#f0f9ff",
+    borderWidth: 1,
+    borderColor: "#bae6fd",
+  },
+  varianceTitle: { fontSize: 10, fontWeight: 700, marginBottom: 4 },
+  varianceBody: { fontSize: 9, color: "#334155", marginBottom: 3 },
+  varianceWarn: { fontSize: 9, color: "#9a3412", marginTop: 3 },
   statusLine: {
     marginTop: 10,
     padding: 10,
@@ -155,7 +180,7 @@ function fmtDate(iso: string): string {
 }
 
 export function BoardReport({ data }: { data: ReportData }) {
-  const { property, stats, stage } = data;
+  const { property, stats, stage, variance } = data;
   return (
     <Document
       title={`Driplin compliance report — ${property.name}`}
@@ -199,6 +224,38 @@ export function BoardReport({ data }: { data: ReportData }) {
           {stats.manualFixesFlagged > 0 &&
             ` · ${stats.manualFixesFlagged} item(s) flagged for manual attention`}
         </Text>
+
+        {/* Why a property can be compliant while watering on a day the
+            city's standard schedule forbids. A board shown "compliant"
+            without this would think the report was wrong. */}
+        {variance && (
+          <View style={styles.varianceBox}>
+            <Text style={styles.varianceTitle}>
+              Watering under an approved variance
+            </Text>
+            <Text style={styles.varianceBody}>{variance.description}</Text>
+            <Text style={styles.varianceBody}>
+              {variance.utility} granted this variance and the property manager
+              recorded it in Driplin. Compliance above is measured against the
+              variance rather than {variance.utility}&apos;s standard schedule.
+              Driplin has not independently verified the approval with{" "}
+              {variance.utility}.
+            </Text>
+            {variance.expiringSoon && (
+              <Text style={styles.varianceWarn}>
+                This variance expires shortly. Once it lapses the property is
+                held to {variance.utility}&apos;s standard schedule again.
+              </Text>
+            )}
+            {variance.stageAdvanced && (
+              <Text style={styles.varianceWarn}>
+                The drought stage has tightened since this variance was
+                approved. {variance.utility} restricts which variances remain
+                valid at stricter stages, so it should be re-confirmed.
+              </Text>
+            )}
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>Activity during this period</Text>
         {data.events.length === 0 ? (

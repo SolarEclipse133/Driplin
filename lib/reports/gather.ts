@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { downloadPhoto, PDF_EMBEDDABLE_TYPES } from "@/lib/photos/store";
 import type { ReportData } from "./board-report";
+import { describeVariance, varianceStatus } from "@/lib/rules/variance";
+import type { Variance, VarianceKind } from "@/lib/rules/variance";
 
 /**
  * Assembles a property's board report.
@@ -43,6 +45,13 @@ export async function gatherReportData(
 
   // The stage that governs THIS property's city.
   const jurisdiction = getJurisdiction(property.jurisdiction);
+  const { data: varianceRows } = await supabase
+    .from("property_variances")
+    .select(
+      "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
+    )
+    .eq("property_id", propertyId);
+
   const { data: stageStatus } = await supabase
     .from("drought_stage_status")
     .select("current_stage, confirmed_at, source_link")
@@ -105,6 +114,35 @@ export async function gatherReportData(
             ? "Compliant"
             : "Pending first check";
 
+  // A board reading "compliant" for a property watering outside the
+  // city's published days deserves the reason in the same document.
+  const currentStage = (stageStatus?.current_stage ?? 0) as DroughtStage;
+  const vstatus = varianceStatus(
+    (varianceRows ?? []).map((row) => ({
+      id: String(row.id),
+      kind: row.kind as VarianceKind,
+      reference: String(row.reference ?? ""),
+      approvedOn: String(row.approved_on ?? ""),
+      expiresOn: String(row.expires_on ?? ""),
+      allowedDays:
+        row.allowed_days === null
+          ? ("ALL" as const)
+          : (row.allowed_days as Variance["allowedDays"]),
+      allowedWindows: (row.allowed_windows as Variance["allowedWindows"]) ?? [],
+      approvedAtStage: Number(row.approved_at_stage ?? 0) as DroughtStage,
+      notes: (row.notes as string | null) ?? null,
+    })),
+    currentStage
+  );
+  const varianceForReport = vstatus.active
+    ? {
+        description: describeVariance(vstatus.active),
+        utility: jurisdiction.utility,
+        expiringSoon: vstatus.expiringSoon,
+        stageAdvanced: vstatus.stageAdvanced,
+      }
+    : null;
+
   const data: ReportData = {
     orgName: org?.name ?? "",
     property: {
@@ -135,6 +173,7 @@ export async function gatherReportData(
       confirmedAt: stageStatus?.confirmed_at ?? null,
       sourceLink: stageStatus?.source_link ?? null,
     },
+    variance: varianceForReport,
     photos,
     generatedAt: new Date().toISOString(),
   };

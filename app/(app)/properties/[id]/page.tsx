@@ -21,6 +21,10 @@ import { MeterAddressForm } from "@/components/meter-address-form";
 import { AddManualController } from "@/components/add-manual-controller";
 import { BoardLink } from "@/components/board-link";
 import { createBoardLink, revokeBoardLink } from "./board-actions";
+import { VariancePanel } from "@/components/variance-panel";
+import { addVariance, removeVariance } from "./variance-actions";
+import { describeVariance, varianceStatus } from "@/lib/rules/variance";
+import type { Variance, VarianceKind } from "@/lib/rules/variance";
 import {
   addDemoController,
   connectVendorDevice,
@@ -90,6 +94,35 @@ export default async function PropertyDetailPage({
     .eq("jurisdiction", property.jurisdiction ?? "austin")
     .maybeSingle();
   const stageForProperty = (stageRow?.current_stage ?? 0) as DroughtStage;
+
+  // Any approved variance on this property. A Large Property variance
+  // is exactly the case Driplin's customers hit: a common area that
+  // cannot be covered inside one city window.
+  const { data: varianceRows } = await supabase
+    .from("property_variances")
+    .select(
+      "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
+    )
+    .eq("property_id", id);
+  const variances = (varianceRows ?? []).map((row) => ({
+    id: String(row.id),
+    kind: row.kind as VarianceKind,
+    reference: String(row.reference ?? ""),
+    approvedOn: String(row.approved_on ?? ""),
+    expiresOn: String(row.expires_on ?? ""),
+    allowedDays:
+      row.allowed_days === null
+        ? ("ALL" as const)
+        : (row.allowed_days as Variance["allowedDays"]),
+    allowedWindows: (row.allowed_windows as Variance["allowedWindows"]) ?? [],
+    approvedAtStage: Number(row.approved_at_stage ?? 0) as DroughtStage,
+    notes: (row.notes as string | null) ?? null,
+  }));
+  const jurisdictionForProperty = getJurisdiction(property.jurisdiction ?? "austin");
+  const variance = varianceStatus(variances, stageForProperty);
+  const varianceDescriptions = Object.fromEntries(
+    variances.map((v) => [v.id, describeVariance(v)])
+  );
 
   const { data: boardLinkRow } = await supabase
     .from("board_links")
@@ -253,6 +286,18 @@ export default async function PropertyDetailPage({
           Edit property
         </Link>
       </div>
+
+      {/* Variances come before the controllers, because an active one
+          changes what every controller below is judged against. */}
+      <VariancePanel
+        action={addVariance}
+        removeAction={removeVariance}
+        propertyId={property.id}
+        status={variance}
+        utility={jurisdictionForProperty.utility}
+        stageName={jurisdictionForProperty.stages[stageForProperty].name}
+        describe={varianceDescriptions}
+      />
 
       {/* Connected controllers */}
       <h2 className="mt-8 text-lg font-semibold">Controllers</h2>

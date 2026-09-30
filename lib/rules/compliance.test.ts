@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateCompliance } from "./compliance";
 import type { DroughtStage } from "@/lib/jurisdictions";
 import type { ScheduleProgram } from "@/lib/controllers/types";
+import type { Variance } from "./variance";
 
 /**
  * The engine, end to end.
@@ -87,5 +88,94 @@ describe("the audit snapshot records the basis of every judgement", () => {
     expect(snapshot.noStreetAddress).toBe(false);
     expect(snapshot.digit).toBe(8);
     expect(snapshot.verified).toBe(true);
+  });
+});
+
+describe("an approved variance", () => {
+  const varianceFor = (over: Partial<Variance> = {}): Variance => ({
+    id: "v1",
+    kind: "large_property",
+    reference: "AW-2026-4417",
+    approvedOn: "2026-08-01",
+    expiresOn: "2026-12-31",
+    allowedDays: ["MON", "THU"],
+    allowedWindows: [{ start: "00:00", end: "10:00" }],
+    approvedAtStage: 0,
+    notes: null,
+    ...over,
+  });
+
+  it("permits what the city's own table forbids", () => {
+    // Austin gives a commercial even address Tuesday. A Large Property
+    // variance exists precisely because such a property "cannot be
+    // fully watered under the current schedule", so Monday is legal for
+    // this one property and Driplin must not flag it.
+    const result = evaluateCompliance(
+      program(["MON"], "05:00"), 8, 0, "austin", COMMERCIAL, varianceFor()
+    );
+    expect(result.compliant).toBe(true);
+    expect(result.findings).toHaveLength(0);
+    expect(result.underVariance).toBe(true);
+  });
+
+  it("still flags a day the variance does not cover either", () => {
+    // A variance is not a blanket pass.
+    const result = evaluateCompliance(
+      program(["SAT"], "05:00"), 8, 0, "austin", COMMERCIAL, varianceFor()
+    );
+    expect(result.compliant).toBe(false);
+  });
+
+  it("never pushes a wider schedule to real hardware", () => {
+    // The permission rests on a document the CUSTOMER reported. If it
+    // does not say what was entered, a push would make Driplin the
+    // cause of the violation.
+    const permissive = evaluateCompliance(
+      program(["MON"], "05:00"), 8, 0, "austin", COMMERCIAL, varianceFor()
+    );
+    expect(permissive.safeToPush).toBe(false);
+    // Without one, pushing is still fine.
+    expect(evaluateCompliance(program(["MON"]), 8, 0, "austin", COMMERCIAL).safeToPush).toBe(true);
+  });
+
+  it("records the approval it relied on, for the audit trail", () => {
+    const result = evaluateCompliance(
+      program(["MON"], "05:00"), 8, 0, "austin", COMMERCIAL, varianceFor()
+    );
+    expect(result.rulesSnapshot.variance).toContain("AW-2026-4417");
+  });
+
+  it("leaves the snapshot clean when there is no variance", () => {
+    const result = evaluateCompliance(program(["TUE"], "05:00"), 8, 0, "austin", COMMERCIAL);
+    expect(result.rulesSnapshot.variance).toBeNull();
+    expect(result.underVariance).toBe(false);
+  });
+
+  it("judges a stage whose city table Driplin has NOT confirmed", () => {
+    // Austin's Stage 3 day assignment is unconfirmed, so normally
+    // Driplin refuses to judge. Under a variance it does not need the
+    // city's table: the approval letter states what this property may do.
+    const result = evaluateCompliance(
+      program(["MON"], "05:00"), 8, 3, "austin", COMMERCIAL, varianceFor({ approvedAtStage: 3 })
+    );
+    expect(result.certified).toBe(true);
+    expect(result.compliant).toBe(true);
+    expect(result.safeToPush).toBe(false);
+  });
+
+  it("honours an approval that permits any day", () => {
+    const result = evaluateCompliance(
+      program(["MON", "WED", "SAT"], "05:00"), 8, 0, "austin", COMMERCIAL,
+      varianceFor({ allowedDays: "ALL" })
+    );
+    expect(result.compliant).toBe(true);
+  });
+
+  it("does not invent an hour limit the approval never set", () => {
+    const result = evaluateCompliance(
+      program(["MON"], "13:00"), 8, 0, "austin", COMMERCIAL,
+      varianceFor({ allowedWindows: [] })
+    );
+    expect(result.compliant).toBe(true);
   });
 });
