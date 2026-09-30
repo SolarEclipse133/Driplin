@@ -3,6 +3,9 @@ import { SettingsForm } from "@/components/settings-form";
 import { updateProfile, sendTestNotification } from "./actions";
 import { TestNotification } from "@/components/test-notification";
 import { emailConfigured, smsConfigured } from "@/lib/notifications/health";
+import { PlanPanel } from "@/components/plan-panel";
+import { getEntitlements } from "@/lib/billing/subscription";
+import { getBillingProvider } from "@/lib/billing/provider";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   sent: { label: "Sent", className: "bg-green-50 text-green-800" },
@@ -18,9 +21,19 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, phone, email")
+    .select("full_name, phone, email, org_id")
     .eq("id", user!.id)
     .single();
+
+  const entitlements = profile?.org_id
+    ? await getEntitlements(supabase, profile.org_id)
+    : null;
+  const contactNote = (await getBillingProvider().startCheckout({
+    orgId: profile?.org_id ?? "",
+    orgName: "",
+    plan: "standard",
+    returnUrl: "/settings",
+  })) as { kind: string; message?: string; url?: string };
 
   const { data: notifications } = await supabase
     .from("notification_log")
@@ -49,6 +62,19 @@ export default async function SettingsPage() {
         />
       </div>
 
+      {entitlements && (
+        <>
+          <h2 className="mt-10 text-lg font-semibold">Plan</h2>
+          <div className="mt-3">
+            <PlanPanel
+              entitlements={entitlements}
+              contactNote={contactNote.message ?? ""}
+            />
+          </div>
+        </>
+      )}
+
+      <h2 className="mt-10 text-lg font-semibold">Notifications</h2>
       <TestNotification action={sendTestNotification} />
 
       <h2 className="mt-10 text-lg font-semibold">Notification history</h2>

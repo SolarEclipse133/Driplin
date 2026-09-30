@@ -8,7 +8,10 @@ import {
 } from "@/lib/jurisdictions";
 import { PullIndicatorForm, ConfirmStageForm } from "@/components/admin-forms";
 import { analyzeTrend } from "@/lib/indicators/trend";
-import { acknowledgeAlert, confirmStage, pullIndicatorNow } from "./actions";
+import { acknowledgeAlert, confirmStage, pullIndicatorNow ,
+  setOrgPlan,
+} from "./actions";
+import { AdminPlans, type OrgPlanRow } from "@/components/admin-plans";
 
 function centralTime(iso: string | null | undefined): string {
   if (!iso) return "never";
@@ -21,6 +24,33 @@ function centralTime(iso: string | null | undefined): string {
 
 export default async function AdminPage() {
   const supabase = await createClient();
+  // Plans across every organization, with how many properties each has.
+  const { data: planRows } = await supabase
+    .from("subscriptions")
+    .select("org_id, plan, status, property_limit, trial_ends_at, notes, organizations(name)")
+    .order("created_at");
+  const { data: allProperties } = await supabase
+    .from("properties")
+    .select("org_id");
+  const propertyCounts = new Map<string, number>();
+  for (const row of allProperties ?? []) {
+    const key = row.org_id as string;
+    propertyCounts.set(key, (propertyCounts.get(key) ?? 0) + 1);
+  }
+  const orgPlans: OrgPlanRow[] = (planRows ?? []).map((r) => {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations;
+    return {
+      orgId: r.org_id as string,
+      orgName: (org?.name as string) ?? "(unnamed)",
+      plan: r.plan as string,
+      status: r.status as string,
+      propertyLimit: r.property_limit as number | null,
+      propertyCount: propertyCounts.get(r.org_id as string) ?? 0,
+      trialEndsAt: r.trial_ends_at as string | null,
+      notes: r.notes as string | null,
+    };
+  });
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -247,6 +277,14 @@ export default async function AdminPage() {
           </section>
         );
       })}
-    </div>
+    
+      <h2 className="mt-10 text-lg font-semibold">Plans</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        What each company is entitled to. Limits gate adding properties;
+        they never pause monitoring of properties already set up.
+      </p>
+      <AdminPlans action={setOrgPlan} orgs={orgPlans} />
+
+      </div>
   );
 }

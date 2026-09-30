@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getEntitlements } from "@/lib/billing/subscription";
 import { isValidStreetNumber } from "@/lib/rules/address";
 import { JURISDICTIONS, jurisdictionForCity } from "@/lib/jurisdictions";
 
@@ -90,6 +91,12 @@ export async function createProperty(
     .eq("id", user.id)
     .single();
   if (!profile) return { ...OK, error: "Your account has no organization." };
+
+  // Plan limits gate GROWTH only. Nothing here can stop an existing
+  // property being monitored — see lib/billing/plans.ts.
+  const entitlements = await getEntitlements(supabase, profile.org_id);
+  if (!entitlements.canAddProperty)
+    return { ...OK, error: entitlements.blockedReason };
 
   const { error } = await supabase
     .from("properties")

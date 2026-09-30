@@ -10,6 +10,7 @@ import {
   getJurisdiction,
   JURISDICTIONS,
 } from "@/lib/jurisdictions";
+import { PLANS, PLAN_IDS, type PlanId } from "@/lib/billing/plans";
 
 export type AdminActionState = { error: string | null; success: string | null };
 
@@ -167,4 +168,64 @@ export async function acknowledgeAlert(formData: FormData): Promise<void> {
     .update({ acknowledged: true, acknowledged_by: admin.id })
     .eq("id", alertId);
   revalidatePath("/admin");
+}
+
+export type PlanChangeState = { error: string | null; success: string | null };
+
+/**
+ * Move a company onto a different plan.
+ *
+ * Admin-only, and row-level security enforces that independently —
+ * this check is the readable half. Deliberately blunt: a plan change
+ * is a commercial decision someone has made elsewhere, and this just
+ * records it.
+ */
+export async function setOrgPlan(
+  _prev: PlanChangeState,
+  formData: FormData
+): Promise<PlanChangeState> {
+  const orgId = String(formData.get("org_id") ?? "");
+  const plan = String(formData.get("plan") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const limitRaw = String(formData.get("property_limit") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!orgId) return { error: "Missing organization.", success: null };
+  if (!PLAN_IDS.includes(plan as PlanId))
+    return { error: "Pick a valid plan.", success: null };
+  if (!["trialing", "active", "past_due", "cancelled"].includes(status))
+    return { error: "Pick a valid status.", success: null };
+
+  // Blank means "use whatever the plan allows".
+  let propertyLimit: number | null = null;
+  if (limitRaw) {
+    const parsed = Number(limitRaw);
+    if (!Number.isInteger(parsed) || parsed < 1)
+      return { error: "Property limit must be a whole number of 1 or more.", success: null };
+    propertyLimit = parsed;
+  } else {
+    propertyLimit = PLANS[plan as PlanId].propertyLimit;
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("subscriptions")
+    .update({
+      plan,
+      status,
+      property_limit: propertyLimit,
+      notes: notes || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("org_id", orgId);
+
+  if (error)
+    return { error: "Could not update that plan. Are you an admin?", success: null };
+
+  revalidatePath("/admin");
+  revalidatePath("/settings");
+  return {
+    error: null,
+    success: `Plan set to ${PLANS[plan as PlanId].name} (${status}), ${propertyLimit === null ? "no property limit" : `${propertyLimit} properties`}.`,
+  };
 }
