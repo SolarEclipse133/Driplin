@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { SettingsForm } from "@/components/settings-form";
-import { updateProfile } from "./actions";
+import { updateProfile, sendTestNotification } from "./actions";
+import { TestNotification } from "@/components/test-notification";
+import { emailConfigured, smsConfigured } from "@/lib/notifications/health";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   sent: { label: "Sent", className: "bg-green-50 text-green-800" },
@@ -26,12 +28,8 @@ export default async function SettingsPage() {
     .order("created_at", { ascending: false })
     .limit(10);
 
-  const smsConfigured = !!(
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_FROM_NUMBER
-  );
-  const emailConfigured = !!process.env.RESEND_API_KEY;
+  const smsReady = smsConfigured();
+  const emailReady = emailConfigured();
 
   return (
     <div>
@@ -51,12 +49,14 @@ export default async function SettingsPage() {
         />
       </div>
 
+      <TestNotification action={sendTestNotification} />
+
       <h2 className="mt-10 text-lg font-semibold">Notification history</h2>
-      {(!smsConfigured || !emailConfigured) && (
+      {(!smsReady || !emailReady) && (
         <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {!emailConfigured && !smsConfigured
+          {!emailReady && !smsReady
             ? "Email and SMS sending are in log-only mode: messages are composed and recorded below, but not delivered until the Resend/Twilio keys are configured (see SETUP.md)."
-            : !emailConfigured
+            : !emailReady
               ? "Email sending is in log-only mode until the Resend key is configured."
               : "SMS sending is in log-only mode until the Twilio keys are configured."}
         </p>

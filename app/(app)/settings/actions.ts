@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { sendEmail, sendSms, type SendResult } from "@/lib/notifications/senders";
 
 export type SettingsState = { error: string | null; success: string | null };
 
@@ -50,4 +51,89 @@ export async function updateProfile(
       ? "Saved. Compliance alerts will be texted to your phone and emailed."
       : "Saved. Compliance alerts will be emailed (no phone number set).",
   };
+}
+
+export type TestNotificationState = {
+  error: string | null;
+  results: { channel: string; recipient: string; outcome: string; detail: string | null }[];
+};
+
+/**
+ * Send a real alert to yourself, right now.
+ *
+ * Without this, the only way to find out whether delivery works is to
+ * wait for a property to go out of compliance — which is exactly the
+ * moment you do not want to discover that Twilio is on a trial plan
+ * that refuses custom messages. It goes through the same senders and
+ * the same log as a real alert, so a pass here means a real alert
+ * would arrive too.
+ */
+export async function sendTestNotification(
+  _prev: TestNotificationState,
+  _formData: FormData
+): Promise<TestNotificationState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You are no longer signed in.", results: [] };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("org_id, email, phone, full_name")
+    .eq("id", user.id)
+    .single();
+  if (!profile) return { error: "Your account has no organization.", results: [] };
+
+  const email = profile.email ?? user.email ?? null;
+  const phone = profile.phone ?? null;
+  if (!email && !phone)
+    return {
+      error: "Add an email address or mobile number above first.",
+      results: [],
+    };
+
+  const who = profile.full_name?.trim() || "there";
+  const subject = "Driplin: test alert";
+  const body =
+    `Hi ${who} — this is a test from Driplin.\n\n` +
+    `If you are reading this, real compliance alerts will reach you the same way.\n\n` +
+    `— Driplin drought compliance`;
+
+  const results: TestNotificationState["results"] = [];
+
+  const record = async (
+    channel: "email" | "sms",
+    recipient: string,
+    result: SendResult,
+    sentBody: string,
+    sentSubject: string | null
+  ) => {
+    await supabase.from("notification_log").insert({
+      alert_id: null,
+      org_id: profile.org_id,
+      channel,
+      recipient,
+      subject: sentSubject,
+      body: sentBody,
+      status: result.status,
+      error: result.status === "failed" ? result.error : null,
+    });
+    results.push({
+      channel,
+      recipient,
+      outcome: result.status,
+      detail: result.status === "failed" ? result.error : null,
+    });
+  };
+
+  if (email) await record("email", email, await sendEmail(email, subject, body), body, subject);
+  if (phone) {
+    const smsBody = "Driplin: test alert. Real compliance alerts will reach you this way.";
+    await record("sms", phone, await sendSms(phone, smsBody), smsBody, null);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  return { error: null, results };
 }
