@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { getJobHealth } from "@/lib/jobs/runs";
+import { STALE_AFTER_HOURS, type JobHealth } from "@/lib/jobs/health";
 import { createClient } from "@/lib/supabase/server";
 import {
   ALL_STAGES,
@@ -20,6 +22,45 @@ function centralTime(iso: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function NightlyRunPanel({ health }: { health: JobHealth }) {
+  const tone = health.neverRun
+    ? "border-slate-200 bg-slate-50 text-slate-700"
+    : health.stale
+      ? "border-red-300 bg-red-50 text-red-900"
+      : "border-emerald-200 bg-emerald-50 text-emerald-900";
+
+  return (
+    <div className={`mt-3 rounded-xl border p-4 text-sm ${tone}`}>
+      {health.neverRun ? (
+        <p>The nightly job has not run yet on this deployment.</p>
+      ) : health.stale ? (
+        <p className="font-semibold">
+          {health.lastSuccessAt
+            ? `Last successful run was ${Math.round(health.hoursSinceSuccess!)} hours ago. Monitoring has stopped.`
+            : "The job has run but never succeeded. Monitoring has stopped."}
+        </p>
+      ) : (
+        <p>
+          Last successful run{" "}
+          {new Date(health.lastSuccessAt!).toLocaleString("en-US", {
+            timeZone: "America/Chicago",
+          })}{" "}
+          ({Math.round(health.hoursSinceSuccess!)}h ago).
+        </p>
+      )}
+      {health.lastError && (
+        <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-mono text-xs">
+          {health.lastError}
+        </p>
+      )}
+      <p className="mt-2 text-xs opacity-80">
+        Every customer dashboard shows a warning once this passes{" "}
+        {STALE_AFTER_HOURS} hours.
+      </p>
+    </div>
+  );
 }
 
 export default async function AdminPage() {
@@ -80,6 +121,8 @@ export default async function AdminPage() {
     .is("org_id", null)
     .order("created_at", { ascending: false });
 
+  const jobHealth = await getJobHealth(supabase);
+
   return (
     <div>
       <h1 className="text-2xl font-semibold">Drought stage administration</h1>
@@ -88,6 +131,11 @@ export default async function AdminPage() {
         customer schedules is what you confirm here, city by city, against
         each utility&apos;s official notice.
       </p>
+
+      {/* Is Driplin itself still running? Above the alerts, because a
+          stopped job means the alert list below is stale too. */}
+      <h2 className="mt-8 text-lg font-semibold">Nightly check</h2>
+      <NightlyRunPanel health={jobHealth} />
 
       {/* Internal alerts across all cities */}
       <h2 className="mt-8 text-lg font-semibold">Internal alerts</h2>

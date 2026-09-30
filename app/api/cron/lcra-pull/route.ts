@@ -4,6 +4,7 @@ import { runAllIndicatorChecks } from "@/lib/indicators/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 import { upgradeLegacyCredentials } from "@/lib/controllers/credentials";
 import { sendScheduledReports } from "@/lib/reports/send";
+import { startRun, finishRun } from "@/lib/jobs/runs";
 
 export const dynamic = "force-dynamic";
 // 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
@@ -37,6 +38,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Record that this run happened. Its absence is what tells anyone
+  // that monitoring has stopped, so it is opened before any work and
+  // closed whatever the outcome.
+  const runId = await startRun(supabase);
+
+  try {
   // Sweep any credential still stored in plaintext from before
   // encryption existed. Cheap, idempotent, and the only thing that
   // makes "credentials are encrypted at rest" true of every row rather
@@ -55,5 +62,23 @@ export async function GET(request: NextRequest) {
   // if the run is running out of time.
   const reports = await sendScheduledReports(supabase);
 
-  return NextResponse.json({ credentials, indicators, complianceRuns, reports });
+    await finishRun(supabase, runId, {
+      status: "ok",
+      detail: {
+        credentials,
+        reports,
+        organizations: Object.keys(complianceRuns).length,
+      },
+    });
+
+    return NextResponse.json({ credentials, indicators, complianceRuns, reports });
+  } catch (err) {
+    // A failed run must still be recorded, or a crash looks exactly
+    // like a cron that never fired — and the two need different fixes.
+    await finishRun(supabase, runId, {
+      status: "failed",
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+    throw err;
+  }
 }

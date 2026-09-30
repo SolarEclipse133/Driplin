@@ -7,6 +7,8 @@ import { getEarlyWarningNotes } from "@/lib/indicators/notes";
 import { EarlyWarningNotes } from "@/components/early-warning-note";
 import { ResponseTimes } from "@/components/response-times";
 import { NotificationWarning } from "@/components/notification-warning";
+import { MonitoringWarning } from "@/components/monitoring-warning";
+import { getMonitoringHealth } from "@/lib/jobs/runs";
 import { getNotificationHealth } from "@/lib/notifications/health";
 import { formatDuration } from "@/lib/rules/benchmarks";
 import { loadBenchmarks } from "@/lib/rules/benchmark-data";
@@ -118,10 +120,12 @@ export default async function DashboardPage() {
 
   const earlyWarnings = await getEarlyWarningNotes(supabase, orgJurisdictions);
   const notificationHealth = await getNotificationHealth(supabase);
+  const jobHealth = await getMonitoringHealth(supabase);
 
   return (
     <div>
       <StageBanner jurisdictionIds={orgJurisdictions} />
+      <MonitoringWarning health={jobHealth} />
       <NotificationWarning health={notificationHealth} />
       {earlyWarnings.length > 0 && (
         <div className="mt-2">
