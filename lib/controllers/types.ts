@@ -7,7 +7,7 @@
  * removing one implementation file plus one factory case — nothing else.
  */
 
-export type ControllerVendor = "rachio" | "hydrawise" | "demo";
+export type ControllerVendor = "rachio" | "hydrawise" | "demo" | "manual";
 
 export type Weekday = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
 

@@ -18,10 +18,12 @@ import { meterFor } from "@/lib/rules/meter";
 import { getVendorApiKey } from "@/lib/controllers/credentials";
 import { SecretKeyError } from "@/lib/crypto/secrets";
 import { MeterAddressForm } from "@/components/meter-address-form";
+import { AddManualController } from "@/components/add-manual-controller";
 import {
   addDemoController,
   connectVendorDevice,
   setMeterAddress,
+  addManualController,
   removeController,
   saveVendorKey,
   syncController,
@@ -568,6 +570,11 @@ export default async function PropertyDetailPage({
           </button>
         </form>
       </div>
+
+      <AddManualController
+        action={addManualController}
+        propertyId={property.id}
+      />
 
       {/* Demo controller */}
       <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-4">

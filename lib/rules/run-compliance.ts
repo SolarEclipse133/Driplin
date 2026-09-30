@@ -20,6 +20,7 @@ import { syncControllerById } from "@/lib/controllers/sync";
 import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 import { meterFor } from "./meter";
 import { getVendorApiKey } from "@/lib/controllers/credentials";
+import { saveEnteredSchedule } from "@/lib/controllers/manual";
 import {
   DEFAULT_PROFILE,
   type IrrigationType,
@@ -422,6 +423,36 @@ export async function verifyControllerNow(
     jurisdictionId,
     profileOf(property, meter)
   );
+
+  // A controller Driplin cannot read cannot be verified. Record what
+  // the person says they set it to, and be explicit that this is their
+  // word rather than a checked fact — that distinction is the whole
+  // reason anyone trusts the rest of the record.
+  if (c.vendor === "manual") {
+    await saveEnteredSchedule(supabase, controllerId, result.correctedPrograms);
+    await supabase
+      .from("controllers")
+      .update({
+        compliance_status: "unknown",
+        compliance_detail: {
+          rules: result.rulesSnapshot,
+          findings: [],
+          manualInstructions: result.manualInstructions,
+          uncertified: true,
+          unverifiable: true,
+          officialUrl: result.officialUrl,
+        },
+        compliance_checked_at: new Date().toISOString(),
+      })
+      .eq("id", controllerId);
+    return {
+      ...base,
+      ok: true,
+      compliant: null,
+      remainingProblems: [],
+      message: `Recorded, and the schedule updated to what the ${result.rulesSnapshot.stageName} rules require. Driplin can't read this controller, so this is logged as your word rather than a checked fact.`,
+    };
+  }
 
   const status = !result.certified
     ? "unknown"

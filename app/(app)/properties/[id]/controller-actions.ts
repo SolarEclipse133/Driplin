@@ -8,6 +8,7 @@ import { DEMO_INITIAL_PROGRAMS } from "@/lib/controllers/demo";
 import { syncControllerById } from "@/lib/controllers/sync";
 import { randomUUID } from "crypto";
 import { isValidStreetNumber } from "@/lib/rules/address";
+import { verifyControllerNow } from "@/lib/rules/run-compliance";
 import { saveVendorApiKey } from "@/lib/controllers/credentials";
 
 export type ConnectFormState = { error: string | null; success: string | null };
@@ -198,5 +199,77 @@ export async function setMeterAddress(
       : number
         ? `Saved — this controller is judged against ${number}.`
         : "Saved — this controller uses the property's address.",
+  };
+}
+
+export type ManualControllerState = { error: string | null; success: string | null };
+
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/**
+ * Add a controller Driplin cannot connect to.
+ *
+ * The person tells us what it is set to; Driplin judges that against
+ * the city's rules and tells them what to change. It can never write
+ * to the hardware, and it never claims to have verified it.
+ */
+export async function addManualController(
+  _prev: ManualControllerState,
+  formData: FormData
+): Promise<ManualControllerState> {
+  const propertyId = String(formData.get("property_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const programName = String(formData.get("program_name") ?? "").trim() || "Irrigation";
+  const days = WEEKDAYS.filter((d) => formData.get(`day_${d}`) === "on");
+  const startTime = String(formData.get("start_time") ?? "").trim();
+  const duration = Number(formData.get("duration_minutes"));
+
+  if (!propertyId) return { error: "Missing property.", success: null };
+  if (!name) return { error: "Give this controller a name, e.g. \"Front entrance timer\".", success: null };
+  if (!/^\d{2}:\d{2}$/.test(startTime))
+    return { error: "Enter the start time as HH:MM, e.g. 05:30.", success: null };
+  if (!Number.isInteger(duration) || duration < 1)
+    return { error: "Enter how many minutes it runs for.", success: null };
+
+  const { supabase, orgId } = await requireOrg();
+  if (!orgId) return { error: "You are no longer signed in.", success: null };
+
+  const { data: inserted, error } = await supabase
+    .from("controllers")
+    .insert({
+      org_id: orgId,
+      property_id: propertyId,
+      vendor: "manual",
+      vendor_device_id: randomUUID(),
+      name,
+      entered_schedule: {
+        programs: [
+          {
+            vendorProgramId: randomUUID(),
+            name: programName,
+            enabled: true,
+            days,
+            startTime,
+            durationMinutes: duration,
+          },
+        ],
+      },
+      entered_schedule_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error || !inserted)
+    return { error: "Could not add that controller.", success: null };
+
+  // Judge it straight away, so the person sees whether what they just
+  // described is actually allowed.
+  await verifyControllerNow(supabase, inserted.id);
+
+  revalidatePath(`/properties/${propertyId}`);
+  revalidatePath("/dashboard");
+  return {
+    error: null,
+    success: `Added. Driplin will tell you what to change on ${name} whenever the rules move.`,
   };
 }

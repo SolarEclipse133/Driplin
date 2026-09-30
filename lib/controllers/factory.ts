@@ -14,6 +14,7 @@ import {
 import { RachioAccountClient, RachioController } from "./rachio";
 import { HydrawiseAccountClient, HydrawiseController } from "./hydrawise";
 import { DemoController } from "./demo";
+import { ManualController } from "./manual";
 
 /** The controllers-table row shape the factory needs. */
 export interface ControllerRow {
@@ -47,6 +48,10 @@ export function getController(
   }
 ): IrrigationController {
   switch (row.vendor) {
+    case "manual":
+      if (!deps.supabase)
+        throw new ControllerError("Manual controllers need a database client.");
+      return new ManualController(deps.supabase, row.id, row.name);
     case "rachio":
       if (!deps.apiKey)
         throw new ControllerError("Rachio API key is missing for this org.");
