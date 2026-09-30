@@ -1,0 +1,24 @@
+name: CI
+
+# Runs on every push and pull request. The watering-day tables are the
+# most safety-critical code here: a wrong table means Driplin rewrites a
+# customer's controller onto a day their city prohibits. That has
+# happened once. This is what stops it happening twice.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
