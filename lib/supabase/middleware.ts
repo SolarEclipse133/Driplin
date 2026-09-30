@@ -13,7 +13,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // /board/<token> is the HOA board's no-login read-only view; like
 // /fix/ it authenticates with the token in the URL and shows exactly
 // one property.
-const PUBLIC_PATHS = ["/login", "/signup", "/fix/", "/board/"];
+const PUBLIC_PATHS = ["/login", "/signup", "/fix/", "/board/", "/join/"];
 
 export async function updateSession(request: NextRequest) {
   // Cron endpoints authenticate with CRON_SECRET inside the route

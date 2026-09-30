@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SettingsForm } from "@/components/settings-form";
 import { updateProfile, sendTestNotification, setReportFrequency } from "./actions";
 import { ReportSettings } from "@/components/report-settings";
+import { TeamPanel } from "@/components/team-panel";
+import { inviteTeammate, revokeInvitation } from "./team-actions";
 import { TestNotification } from "@/components/test-notification";
 import { emailConfigured, smsConfigured } from "@/lib/notifications/health";
 import { PlanPanel } from "@/components/plan-panel";
@@ -33,6 +35,18 @@ export default async function SettingsPage() {
         .eq("id", profile.org_id)
         .maybeSingle()
     : { data: null };
+
+  const [{ data: memberRows }, { data: inviteRows }] = profile?.org_id
+    ? await Promise.all([
+        supabase.from("profiles").select("id, full_name, email").eq("org_id", profile.org_id),
+        supabase
+          .from("invitations")
+          .select("id, email, expires_at")
+          .is("accepted_at", null)
+          .is("revoked_at", null)
+          .order("created_at", { ascending: false }),
+      ])
+    : [{ data: null }, { data: null }];
 
   const entitlements = profile?.org_id
     ? await getEntitlements(supabase, profile.org_id)
@@ -82,6 +96,23 @@ export default async function SettingsPage() {
           </div>
         </>
       )}
+
+      <h2 className="mt-10 text-lg font-semibold">Your team</h2>
+      <TeamPanel
+        action={inviteTeammate}
+        revokeAction={revokeInvitation}
+        members={(memberRows ?? []).map((m) => ({
+          id: m.id as string,
+          name: (m.full_name as string)?.trim() || "Unnamed",
+          email: (m.email as string | null) ?? null,
+          isYou: m.id === user!.id,
+        }))}
+        pending={(inviteRows ?? []).map((i) => ({
+          id: i.id as string,
+          email: i.email as string,
+          expiresAt: i.expires_at as string,
+        }))}
+      />
 
       <h2 className="mt-10 text-lg font-semibold">Reports</h2>
       <ReportSettings
