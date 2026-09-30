@@ -63,7 +63,6 @@ const RESIDENTIAL_DRIP = byParity(["THU", "SUN"], ["WED", "SAT"]);
 const COMMERCIAL_AUTOMATIC = byParity(["TUE"], ["FRI"]);
 const COMMERCIAL_DRIP = everyDigit(["TUE", "FRI"]);
 
-const noWatering = everyDigit([]);
 
 /** Automatic irrigation must finish by 10 a.m. or start after 7 p.m. */
 const STANDARD_WINDOWS: TimeWindow[] = [
@@ -123,45 +122,62 @@ export const AUSTIN: Jurisdiction = {
       },
       verified: true,
     },
+    // Stages 1-4: the 2024 Drought Contingency Plan sets the FREQUENCY
+    // and the HOURS for each stage, and those are quoted below. It does
+    // not assign days at all — it says only "assigned weekday" — so the
+    // day-by-address table is operational, published by Austin Water
+    // only for the stage currently in force. Driplin therefore still
+    // makes no judgement here, but says what it does know rather than a
+    // bare "check with the utility".
     1: {
       name: "Stage 1",
       daysByDigit: COMMERCIAL_AUTOMATIC,
-      allowedWindows: STANDARD_WINDOWS,
+      allowedWindows: [
+        { start: "00:00", end: "08:00" },
+        { start: "19:00", end: "24:00" },
+      ],
       summary:
-        "Watering days are assigned by address, but Austin publishes its day tables only for the stage currently in force. Driplin flags these properties for review instead of correcting them.",
+        "Austin's Drought Contingency Plan allows automatic irrigation once a week in Stage 1, midnight–8 a.m. or 7 p.m.–midnight. The plan does not say which day each address is assigned, and Driplin has not confirmed it.",
       verified: false,
       scheduleUnknown: true,
     },
     2: {
       name: "Stage 2",
       daysByDigit: COMMERCIAL_AUTOMATIC,
-      // When Austin was last in Stage 2 the morning window was cut to
-      // "before 5 a.m." — recorded here, but the day table is not
-      // published while the city is in Conservation Stage.
       allowedWindows: [
         { start: "00:00", end: "05:00" },
         { start: "19:00", end: "24:00" },
       ],
       summary:
-        "Once a week on the assigned day, before 5 a.m. or after 7 p.m. Driplin has not been able to confirm Austin's Stage 2 day table, so these properties are flagged for review rather than corrected.",
+        "Austin's Drought Contingency Plan allows automatic irrigation once a week in Stage 2, midnight–5 a.m. or 7 p.m.–midnight. The plan does not say which day each address is assigned, and Driplin has not confirmed it.",
       verified: false,
       scheduleUnknown: true,
     },
     3: {
       name: "Stage 3",
       daysByDigit: COMMERCIAL_AUTOMATIC,
-      allowedWindows: STANDARD_WINDOWS,
+      // Same ten-hour allowance as Stage 2 in the plan's table.
+      allowedWindows: [
+        { start: "00:00", end: "05:00" },
+        { start: "19:00", end: "24:00" },
+      ],
       summary:
-        "Austin does not publish its Stage 3 day table while the city is in Conservation Stage. Driplin flags these properties for review rather than correcting them.",
+        "Austin's Drought Contingency Plan allows automatic irrigation once a week in Stage 3, ten hours in total. The plan does not say which day each address is assigned, and Driplin has not confirmed it.",
       verified: false,
       scheduleUnknown: true,
     },
     4: {
       name: "Stage 4",
-      daysByDigit: noWatering,
+      daysByDigit: COMMERCIAL_AUTOMATIC,
       allowedWindows: [],
-      summary: "No automatic irrigation allowed (details pending verification).",
+      // CORRECTION: this previously said no irrigation at all. The 2024
+      // plan permits automatic irrigation once a week for six hours
+      // even in Stage 4. Telling a customer to shut off entirely would
+      // be wrong, and the kind of wrong that costs a landscape.
+      summary:
+        "Austin's Drought Contingency Plan allows automatic irrigation once a week in Stage 4, six hours in total. The plan does not say which day or which hours, and Driplin has not confirmed them.",
       verified: false,
+      scheduleUnknown: true,
     },
   },
   indicator: {

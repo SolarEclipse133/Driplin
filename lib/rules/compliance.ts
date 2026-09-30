@@ -139,7 +139,10 @@ export function evaluateCompliance(
       manualInstructions: [
         profile.noStreetAddress
           ? `This meter has no street address, and ${jurisdiction.utility} publishes no watering day for such areas. Ask ${jurisdiction.utility} which day applies to it under ${rule.name} (${jurisdiction.officialUrl}), then set the controller by hand.`
-          : `Check this property's assigned watering day and hours for ${rule.name} at ${jurisdiction.officialUrl}, then confirm the controller matches.`,
+          : // Say what IS known about the stage before admitting what
+            // isn't. "Check with the utility" on its own gives whoever
+            // has to act on this nothing to work with.
+            `${rule.summary} Confirm this property's assigned day with ${jurisdiction.utility} (${jurisdiction.officialUrl}), then set the controller to match.`,
       ],
       rulesSnapshot: snapshot,
     };
