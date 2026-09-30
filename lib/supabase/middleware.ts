@@ -10,7 +10,10 @@ import { NextResponse, type NextRequest } from "next/server";
 // Pages that do NOT require login. /fix/<token> is the vendor's
 // no-login work-order page: it authenticates with the token in the URL
 // and exposes exactly one job, so it must bypass the session check.
-const PUBLIC_PATHS = ["/login", "/signup", "/fix/"];
+// /board/<token> is the HOA board's no-login read-only view; like
+// /fix/ it authenticates with the token in the URL and shows exactly
+// one property.
+const PUBLIC_PATHS = ["/login", "/signup", "/fix/", "/board/"];
 
 export async function updateSession(request: NextRequest) {
   // Cron endpoints authenticate with CRON_SECRET inside the route

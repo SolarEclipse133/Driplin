@@ -19,6 +19,8 @@ import { getVendorApiKey } from "@/lib/controllers/credentials";
 import { SecretKeyError } from "@/lib/crypto/secrets";
 import { MeterAddressForm } from "@/components/meter-address-form";
 import { AddManualController } from "@/components/add-manual-controller";
+import { BoardLink } from "@/components/board-link";
+import { createBoardLink, revokeBoardLink } from "./board-actions";
 import {
   addDemoController,
   connectVendorDevice,
@@ -88,6 +90,15 @@ export default async function PropertyDetailPage({
     .eq("jurisdiction", property.jurisdiction ?? "austin")
     .maybeSingle();
   const stageForProperty = (stageRow?.current_stage ?? 0) as DroughtStage;
+
+  const { data: boardLinkRow } = await supabase
+    .from("board_links")
+    .select("id, label, created_at, expires_at, last_viewed_at")
+    .eq("property_id", id)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const { data: confirmations } = await supabase
     .from("manual_fix_confirmations")
@@ -570,6 +581,23 @@ export default async function PropertyDetailPage({
           </button>
         </form>
       </div>
+
+      <BoardLink
+        action={createBoardLink}
+        revokeAction={revokeBoardLink}
+        propertyId={property.id}
+        existing={
+          boardLinkRow
+            ? {
+                id: boardLinkRow.id as string,
+                label: (boardLinkRow.label as string | null) ?? null,
+                createdAt: boardLinkRow.created_at as string,
+                expiresAt: boardLinkRow.expires_at as string,
+                lastViewedAt: (boardLinkRow.last_viewed_at as string | null) ?? null,
+              }
+            : null
+        }
+      />
 
       <AddManualController
         action={addManualController}

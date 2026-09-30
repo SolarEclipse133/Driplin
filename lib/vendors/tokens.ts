@@ -17,29 +17,20 @@
  * is handed straight to the person sending it. It is never logged.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import {
+  generateLinkToken,
+  hashLinkToken,
+  tokenHashesMatch,
+} from "@/lib/security/tokens";
 
 /** How long a work-order link stays usable. */
 export const WORK_ORDER_TTL_DAYS = 14;
 
-export function generateWorkOrderToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-export function hashWorkOrderToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-/**
- * Constant-time comparison of two hashes, so response timing can't be
- * used to narrow down a token.
- */
-export function hashesMatch(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, "hex");
-  const bufB = Buffer.from(b, "hex");
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
+// The crypto lives in lib/security/tokens.ts, shared with board links.
+// These names are kept so nothing that calls them has to change.
+export const generateWorkOrderToken = generateLinkToken;
+export const hashWorkOrderToken = hashLinkToken;
+export const hashesMatch = tokenHashesMatch;
 
 export function workOrderExpiry(from: Date = new Date()): Date {
   return new Date(from.getTime() + WORK_ORDER_TTL_DAYS * 24 * 3600 * 1000);
