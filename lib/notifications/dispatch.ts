@@ -6,10 +6,13 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail, sendSms } from "./senders";
+import { recipientsFor } from "./recipients";
 
 interface AlertRow {
   id: string;
   org_id: string | null;
+  /** Used to route the alert to whoever is responsible for it. */
+  property_id?: string | null;
   type: "violation" | "push_failed" | "lcra_threshold";
   message: string;
   details?: unknown;
@@ -55,14 +58,24 @@ export async function dispatchAlertNotifications(
   if (alert.org_id) {
     const { data: members } = await supabase
       .from("profiles")
-      .select("email, phone")
+      .select("id, email, phone")
       .eq("org_id", alert.org_id);
-    emailRecipients = (members ?? [])
-      .map((m) => m.email)
-      .filter((e): e is string => !!e);
-    smsRecipients = (members ?? [])
-      .map((m) => m.phone)
-      .filter((p): p is string => !!p);
+
+    // Route to whoever owns this property, if anyone does. See
+    // ./recipients: narrowing the audience must never empty it.
+    let assigneeId: string | null = null;
+    if (alert.property_id) {
+      const { data: property } = await supabase
+        .from("properties")
+        .select("assigned_to")
+        .eq("id", alert.property_id)
+        .maybeSingle();
+      assigneeId = (property?.assigned_to as string | null) ?? null;
+    }
+
+    const routed = recipientsFor(members ?? [], assigneeId);
+    emailRecipients = routed.email;
+    smsRecipients = routed.sms;
   } else {
     const adminEmail = process.env.ADMIN_ALERT_EMAIL;
     if (adminEmail) {

@@ -32,6 +32,9 @@ function parseAndValidate(formData: FormData) {
     // residential ones, so a wrong value here means a wrong day.
     property_class: String(formData.get("property_class") ?? "commercial").trim(),
     irrigation_type: String(formData.get("irrigation_type") ?? "automatic").trim(),
+    // Blank means "everyone", which is the safe default: narrowing the
+    // audience must never be able to empty it.
+    assigned_to: String(formData.get("assigned_to") ?? "").trim() || null,
   };
 
   // Blank selection means "work it out from the city name".

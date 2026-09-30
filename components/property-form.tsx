@@ -16,6 +16,7 @@ type PropertyValues = {
   property_class: string;
   irrigation_type: string;
   no_street_address: boolean;
+  assigned_to: string;
 };
 
 const EMPTY: PropertyValues = {
@@ -29,12 +30,14 @@ const EMPTY: PropertyValues = {
   property_class: "commercial",
   irrigation_type: "automatic",
   no_street_address: false,
+  assigned_to: "",
 };
 
 export function PropertyForm({
   action,
   initialValues = EMPTY,
   submitLabel,
+  members = [],
 }: {
   action: (
     prev: PropertyFormState,
@@ -42,6 +45,8 @@ export function PropertyForm({
   ) => Promise<PropertyFormState>;
   initialValues?: PropertyValues;
   submitLabel: string;
+  /** Everyone on this account, for routing this property's alerts. */
+  members?: { id: string; label: string }[];
 }) {
   const [state, formAction, pending] = useActionState(action, {
     error: null,
@@ -55,7 +60,7 @@ export function PropertyForm({
   // Only the text and number fields go through this helper; the
   // no-address checkbox is rendered on its own above.
   const field = (
-    name: Exclude<keyof PropertyValues, "no_street_address">,
+    name: Exclude<keyof PropertyValues, "no_street_address" | "assigned_to">,
     label: string,
     props: React.InputHTMLAttributes<HTMLInputElement> = {}
   ) => (
@@ -236,6 +241,35 @@ export function PropertyForm({
           systems.
         </p>
       </div>
+
+      {members.length > 0 && (
+        <div>
+          <label htmlFor="assigned_to" className="block text-sm font-medium">
+            Who looks after this property?
+          </label>
+          <select
+            id="assigned_to"
+            name="assigned_to"
+            value={values.assigned_to}
+            onChange={(e) =>
+              setValues((v) => ({ ...v, assigned_to: e.target.value }))
+            }
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          >
+            <option value="">Everyone on this account</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Alerts about this property go to them instead of the whole team.
+            At forty properties, alerts that go to everyone get muted — and a
+            muted alert is the same as no alert.
+          </p>
+        </div>
+      )}
 
       {state.error && (
         <p

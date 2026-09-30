@@ -12,11 +12,20 @@ export default async function EditPropertyPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address")
+    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address, assigned_to")
     .eq("id", id)
     .single();
 
   if (!property) notFound();
+
+  // Everyone on this account, so a property can be routed to one of them.
+  const { data: memberRows } = await supabase
+    .from("profiles")
+    .select("id, full_name, email");
+  const members = (memberRows ?? []).map((m) => ({
+    id: m.id as string,
+    label: (m.full_name as string)?.trim() || (m.email as string) || "Unnamed",
+  }));
 
   const updateWithId = updateProperty.bind(null, property.id);
 
@@ -28,6 +37,7 @@ export default async function EditPropertyPage({
       <div className="mt-6">
         <PropertyForm
           action={updateWithId}
+          members={members}
           initialValues={{
             name: property.name,
             street_number: property.street_number ?? "",
@@ -39,6 +49,7 @@ export default async function EditPropertyPage({
             property_class: property.property_class ?? "commercial",
             irrigation_type: property.irrigation_type ?? "automatic",
             no_street_address: property.no_street_address ?? false,
+            assigned_to: property.assigned_to ?? "",
           }}
           submitLabel="Save changes"
         />

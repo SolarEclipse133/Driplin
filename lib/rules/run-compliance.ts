@@ -274,7 +274,7 @@ export async function runComplianceForOrg(
           message: `${property.name}: schedule was out of compliance and has been corrected automatically.`,
           details: { findings: result.findings },
         })
-        .select("id, org_id, type, message, details")
+        .select("id, org_id, property_id, type, message, details")
         .single();
       if (correctionAlert)
         await dispatchAlertNotifications(supabase, correctionAlert);
@@ -318,7 +318,7 @@ export async function runComplianceForOrg(
           message: `${property.name} is out of compliance and needs a manual schedule change (${c.name}).`,
           details: { manualInstructions: result.manualInstructions, reason },
         })
-        .select("id, org_id, type, message, details")
+        .select("id, org_id, property_id, type, message, details")
         .single();
       if (manualAlert) await dispatchAlertNotifications(supabase, manualAlert);
     }
