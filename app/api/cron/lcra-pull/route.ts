@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { runAllIndicatorChecks } from "@/lib/indicators/check";
 import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 import { upgradeLegacyCredentials } from "@/lib/controllers/credentials";
+import { sendScheduledReports } from "@/lib/reports/send";
 
 export const dynamic = "force-dynamic";
 // 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
@@ -50,5 +51,9 @@ export async function GET(request: NextRequest) {
     complianceRuns[org.id] = await runComplianceForOrg(supabase, org.id);
   }
 
-  return NextResponse.json({ credentials, indicators, complianceRuns });
+  // Board reports last: compliance is the job that must not be starved
+  // if the run is running out of time.
+  const reports = await sendScheduledReports(supabase);
+
+  return NextResponse.json({ credentials, indicators, complianceRuns, reports });
 }

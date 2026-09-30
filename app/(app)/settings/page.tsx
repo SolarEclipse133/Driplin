@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SettingsForm } from "@/components/settings-form";
-import { updateProfile, sendTestNotification } from "./actions";
+import { updateProfile, sendTestNotification, setReportFrequency } from "./actions";
+import { ReportSettings } from "@/components/report-settings";
 import { TestNotification } from "@/components/test-notification";
 import { emailConfigured, smsConfigured } from "@/lib/notifications/health";
 import { PlanPanel } from "@/components/plan-panel";
@@ -24,6 +25,14 @@ export default async function SettingsPage() {
     .select("full_name, phone, email, org_id")
     .eq("id", user!.id)
     .single();
+
+  const { data: org } = profile?.org_id
+    ? await supabase
+        .from("organizations")
+        .select("report_frequency")
+        .eq("id", profile.org_id)
+        .maybeSingle()
+    : { data: null };
 
   const entitlements = profile?.org_id
     ? await getEntitlements(supabase, profile.org_id)
@@ -73,6 +82,12 @@ export default async function SettingsPage() {
           </div>
         </>
       )}
+
+      <h2 className="mt-10 text-lg font-semibold">Reports</h2>
+      <ReportSettings
+        action={setReportFrequency}
+        current={(org?.report_frequency as string) ?? "quarterly"}
+      />
 
       <h2 className="mt-10 text-lg font-semibold">Notifications</h2>
       <TestNotification action={sendTestNotification} />

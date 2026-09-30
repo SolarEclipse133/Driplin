@@ -137,3 +137,44 @@ export async function sendTestNotification(
   revalidatePath("/dashboard");
   return { error: null, results };
 }
+
+export type ReportSettingsState = { error: string | null; success: string | null };
+
+/** How often this company's board reports go out. */
+export async function setReportFrequency(
+  _prev: ReportSettingsState,
+  formData: FormData
+): Promise<ReportSettingsState> {
+  const frequency = String(formData.get("report_frequency") ?? "");
+  if (!["off", "monthly", "quarterly"].includes(frequency))
+    return { error: "Pick how often reports should go out.", success: null };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You are no longer signed in.", success: null };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("org_id")
+    .eq("id", user.id)
+    .single();
+  if (!profile?.org_id)
+    return { error: "Your account has no organization.", success: null };
+
+  const { error } = await supabase
+    .from("organizations")
+    .update({ report_frequency: frequency })
+    .eq("id", profile.org_id);
+  if (error) return { error: "Could not save that setting.", success: null };
+
+  revalidatePath("/settings");
+  return {
+    error: null,
+    success:
+      frequency === "off"
+        ? "Board reports turned off. You can still download one any time from a property."
+        : `Board reports will go out ${frequency}, one per property, to everyone on this account.`,
+  };
+}

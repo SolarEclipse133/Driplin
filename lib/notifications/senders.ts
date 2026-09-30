@@ -73,10 +73,17 @@ export async function sendSms(to: string, body: string): Promise<SendResult> {
   }
 }
 
+export interface EmailAttachment {
+  filename: string;
+  /** Base64-encoded file contents. */
+  content: string;
+}
+
 export async function sendEmail(
   to: string,
   subject: string,
-  body: string
+  body: string,
+  attachments?: EmailAttachment[]
 ): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { status: "logged" };
@@ -92,7 +99,13 @@ export async function sendEmail(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to: [to], subject, text: body }),
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        text: body,
+        ...(attachments?.length ? { attachments } : {}),
+      }),
       cache: "no-store",
     });
     if (!res.ok) {
