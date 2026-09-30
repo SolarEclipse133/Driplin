@@ -55,6 +55,7 @@ function profileOf(
 import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
 import { varianceStatus, type Variance, type VarianceKind } from "./variance";
+import { decideChase } from "./work-order-chase";
 import { estimateWeeklySavings } from "./savings";
 
 /**
@@ -152,6 +153,8 @@ export interface OrgComplianceSummary {
   needsManualFix: number;
   /** Controllers in cities whose published schedule we can't confirm. */
   uncertified: number;
+  /** Work orders chased because nobody acted on them. */
+  chased: number;
   errors: string[];
 }
 
@@ -165,6 +168,7 @@ export async function runComplianceForOrg(
     corrected: 0,
     needsManualFix: 0,
     uncertified: 0,
+    chased: 0,
     errors: [],
   };
 
@@ -470,7 +474,120 @@ export async function runComplianceForOrg(
     }
   }
 
+  // Work handed to a vendor that nobody did. Driplin found the problem,
+  // sent it on, and until now quietly hoped.
+  summary.chased = await chaseStaleWorkOrders(supabase, orgId);
+
   return summary;
+}
+
+/**
+ * Chase open work orders on properties that are still in breach.
+ *
+ * Runs once per organization after the controller sweep, so the
+ * compliance statuses it reads are the ones just written.
+ */
+async function chaseStaleWorkOrders(
+  supabase: SupabaseClient,
+  orgId: string
+): Promise<number> {
+  const { data: orders } = await supabase
+    .from("work_orders")
+    .select(
+      "id, property_id, created_at, expires_at, properties(name, archived_at), vendors(name), controllers(compliance_status)"
+    )
+    .eq("org_id", orgId)
+    .eq("status", "open");
+
+  if (!orders || orders.length === 0) return 0;
+
+  // When each order was last chased. Read from the alerts themselves, so
+  // there is one record of what the customer has been told rather than a
+  // second bookkeeping column that can drift from it.
+  const { data: priorChases } = await supabase
+    .from("alerts")
+    .select("details, created_at")
+    .eq("org_id", orgId)
+    .eq("type", "work_order_stale")
+    .order("created_at", { ascending: false });
+
+  const lastChase = new Map<string, string>();
+  for (const a of priorChases ?? []) {
+    const id = (a.details as { workOrderId?: string } | null)?.workOrderId;
+    // Ordered newest first, so the first one seen per order is the latest.
+    if (id && !lastChase.has(id)) lastChase.set(id, a.created_at as string);
+  }
+
+  let chased = 0;
+  for (const o of orders) {
+    const property = Array.isArray(o.properties) ? o.properties[0] : o.properties;
+    if (!property) continue;
+    // A property that has left the portfolio is not chased about.
+    if (property.archived_at) continue;
+
+    const vendor = Array.isArray(o.vendors) ? o.vendors[0] : o.vendors;
+    const controller = Array.isArray(o.controllers)
+      ? o.controllers[0]
+      : o.controllers;
+    const status = (controller?.compliance_status as string | null) ?? null;
+
+    const decision = decideChase(
+      {
+        id: o.id as string,
+        propertyName: property.name as string,
+        vendorName: (vendor?.name as string | null) ?? null,
+        createdAt: o.created_at as string,
+        expiresAt: o.expires_at as string,
+        // Only a property still in breach is worth chasing about. An
+        // unknown status is not a breach -- Driplin does not chase
+        // someone over a judgement it could not make.
+        stillNonCompliant:
+          status === "violation" || status === "needs_manual_fix",
+        lastChasedAt: lastChase.get(o.id as string) ?? null,
+      },
+      Date.now()
+    );
+
+    if (!decision.chase) continue;
+
+    await supabase.from("compliance_events").insert({
+      org_id: orgId,
+      property_id: o.property_id,
+      type: "work_order_stale",
+      summary: decision.message,
+      details: {
+        workOrderId: o.id,
+        ageDays: decision.ageDays,
+        linkExpired: decision.linkExpired,
+      },
+    });
+
+    const { data: alert } = await supabase
+      .from("alerts")
+      .insert({
+        org_id: orgId,
+        property_id: o.property_id,
+        type: "work_order_stale",
+        severity: decision.severity,
+        message: decision.message,
+        details: {
+          workOrderId: o.id,
+          ageDays: decision.ageDays,
+          linkExpired: decision.linkExpired,
+        },
+      })
+      .select("id, org_id, property_id, type, message, details")
+      .single();
+    // Only count it once something actually went out. Reporting a chase
+    // that failed to send would be the same kind of quiet lie this
+    // feature exists to remove.
+    if (alert) {
+      await dispatchAlertNotifications(supabase, alert);
+      chased += 1;
+    }
+  }
+
+  return chased;
 }
 
 /**

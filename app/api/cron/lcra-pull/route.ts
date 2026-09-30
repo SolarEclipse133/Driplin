@@ -68,6 +68,11 @@ export async function GET(request: NextRequest) {
         credentials,
         reports,
         organizations: Object.keys(complianceRuns).length,
+        // Work orders chased for going unanswered, across all orgs.
+        chased: Object.values(complianceRuns).reduce<number>(
+          (n, r) => n + ((r as { chased?: number }).chased ?? 0),
+          0
+        ),
       },
     });
 
