@@ -11,7 +11,7 @@ export default async function VendorsPage() {
         .from("vendors")
         .select("id, name, contact_name, email, phone")
         .order("name"),
-      supabase.from("properties").select("id, name").order("name"),
+      supabase.from("properties").select("id, name").is("archived_at", null).order("name"),
       supabase.from("vendor_properties").select("vendor_id, property_id"),
     ]);
 

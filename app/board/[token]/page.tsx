@@ -74,10 +74,18 @@ export default async function BoardPage({
           <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
           <p className={`font-semibold ${style.text}`}>{view.statusLabel}</p>
         </div>
-        {view.checkedAt && (
-          <p className="mt-1 text-xs text-slate-500">
-            Last checked {when(view.checkedAt)}
+        {view.archivedAt ? (
+          <p className="mt-1 text-xs text-slate-600">
+            This property left the portfolio on {when(view.archivedAt)}. The
+            record below covers the period up to then; Driplin has not checked
+            it since.
           </p>
+        ) : (
+          view.checkedAt && (
+            <p className="mt-1 text-xs text-slate-500">
+              Last checked {when(view.checkedAt)}
+            </p>
+          )
         )}
       </div>
 

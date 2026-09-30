@@ -16,7 +16,10 @@ export async function getEntitlements(
     supabase
       .from("properties")
       .select("id", { count: "exact", head: true })
-      .eq("org_id", orgId),
+      .eq("org_id", orgId)
+      // Archived properties keep their record but are not part of the
+      // portfolio any more, so they are not billed for.
+      .is("archived_at", null),
   ]);
 
   return entitlementsFor(subscription, count ?? 0);

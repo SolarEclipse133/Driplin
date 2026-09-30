@@ -182,7 +182,7 @@ export async function runComplianceForOrg(
   const { data: controllers, error } = await supabase
     .from("controllers")
     .select(
-      "id, org_id, property_id, vendor, vendor_device_id, name, meter_street_number, meter_no_street_address, meter_label, properties(id, name, street_number, street_name, jurisdiction, property_class, irrigation_type, no_street_address)"
+      "id, org_id, property_id, vendor, vendor_device_id, name, meter_street_number, meter_no_street_address, meter_label, properties(id, name, street_number, street_name, jurisdiction, property_class, irrigation_type, no_street_address, archived_at)"
     )
     .eq("org_id", orgId);
   if (error) {
@@ -197,6 +197,12 @@ export async function runComplianceForOrg(
   for (const c of controllers ?? []) {
     const property = Array.isArray(c.properties) ? c.properties[0] : c.properties;
     if (!property) continue;
+
+    // An archived property has left the portfolio: not monitored, not
+    // billed, not counted as checked. Its record stays intact, but
+    // Driplin makes no claim about a property it no longer watches.
+    if (property.archived_at) continue;
+
     summary.checked += 1;
 
     // 1. Refresh our cached copy of the schedule (best effort — a failed

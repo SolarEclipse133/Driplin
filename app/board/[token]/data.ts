@@ -29,6 +29,8 @@ export interface BoardView {
   orgName: string;
   status: "compliant" | "needs_attention" | "unknown";
   statusLabel: string;
+  /** Set when the property has left the portfolio and is no longer checked. */
+  archivedAt: string | null;
   jurisdictionName: string;
   utility: string;
   stageName: string;
@@ -63,7 +65,7 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
   const { data: property } = await supabase
     .from("properties")
     .select(
-      "name, street_number, street_name, city, state, zip, jurisdiction, no_street_address, organizations(name), controllers(compliance_status, compliance_checked_at)"
+      "name, street_number, street_name, city, state, zip, jurisdiction, no_street_address, archived_at, organizations(name), controllers(compliance_status, compliance_checked_at)"
     )
     .eq("id", link.property_id as string)
     .maybeSingle();
@@ -75,8 +77,12 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
   const controllers = Array.isArray(property.controllers) ? property.controllers : [];
   const statuses = controllers.map((c) => c.compliance_status as string);
 
-  const status: BoardView["status"] =
-    statuses.length === 0
+  const status: BoardView["status"] = property.archived_at
+    ? // Driplin stopped checking, so it claims nothing either way. A
+      // green light on an unmonitored property is the lie this whole
+      // change exists to avoid.
+      "unknown"
+    : statuses.length === 0
       ? "unknown"
       : statuses.includes("needs_manual_fix") || statuses.includes("violation")
         ? "needs_attention"
@@ -124,8 +130,13 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
       .join(" ") + `, ${property.city} ${property.zip}`,
     orgName: (org?.name as string) ?? "",
     status,
-    statusLabel:
-      status === "compliant"
+    // A board member holding a link to a property that has left the
+    // portfolio must not read a months-old "Compliant" as today's
+    // status. Driplin stopped checking; say so instead of implying it.
+    archivedAt: (property.archived_at as string) ?? null,
+    statusLabel: property.archived_at
+      ? "No longer monitored by Driplin"
+      : status === "compliant"
         ? "Compliant with current watering rules"
         : status === "needs_attention"
           ? "Needs attention"

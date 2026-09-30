@@ -138,8 +138,22 @@ export async function updateProperty(
   redirect("/properties");
 }
 
-export async function deleteProperty(formData: FormData): Promise<void> {
+/**
+ * Take a property out of the portfolio, keeping its record.
+ *
+ * Replaces what used to be a hard delete. Deleting cascaded away every
+ * compliance event, every hands-on fix confirmation with its photo
+ * proof, and every work order -- the evidence Driplin exists to
+ * produce -- with no undo. A manager who loses a property still needs
+ * last August's record when a city or a board asks, and that is
+ * precisely when they no longer have the property.
+ *
+ * Archived means: off the dashboard, not monitored, not billed, record
+ * intact and restorable.
+ */
+export async function archiveProperty(formData: FormData): Promise<void> {
   const propertyId = String(formData.get("property_id") ?? "");
+  const reason = String(formData.get("archive_reason") ?? "").trim();
   if (!propertyId) return;
 
   const supabase = await createClient();
@@ -148,9 +162,89 @@ export async function deleteProperty(formData: FormData): Promise<void> {
   } = await supabase.auth.getUser();
   if (!user) return;
 
-  // RLS guarantees org scoping here as well.
+  // RLS scopes this to the viewer's organization.
+  await supabase
+    .from("properties")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: user.id,
+      archive_reason: reason || null,
+    })
+    .eq("id", propertyId);
+
+  revalidatePath("/properties");
+  revalidatePath("/dashboard");
+  redirect("/properties");
+}
+
+/**
+ * Bring an archived property back into the portfolio.
+ *
+ * Checks the plan limit, because restoring adds a billable property.
+ * Without this, archiving would be a way to get under the limit and
+ * restoring a way to step back over it.
+ */
+export async function restoreProperty(formData: FormData): Promise<void> {
+  const propertyId = String(formData.get("property_id") ?? "");
+  if (!propertyId) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user: restorer },
+  } = await supabase.auth.getUser();
+  if (!restorer) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("org_id")
+    .eq("id", restorer.id)
+    .single();
+  if (!profile) return;
+
+  const entitlements = await getEntitlements(supabase, profile.org_id);
+  if (!entitlements.canAddProperty) {
+    // Leave it archived rather than restoring something that cannot be
+    // monitored. The record stays reachable either way.
+    redirect("/settings?restore=limit");
+  }
+
+  await supabase
+    .from("properties")
+    .update({ archived_at: null, archived_by: null, archive_reason: null })
+    .eq("id", propertyId);
+
+  revalidatePath("/properties");
+  revalidatePath("/dashboard");
+  redirect(`/properties/${propertyId}`);
+}
+
+/**
+ * Destroy a property and everything recorded about it, for good.
+ *
+ * Kept for the two cases that genuinely need it -- a property entered by
+ * mistake, and a customer asking for their data to be erased -- but
+ * deliberately awkward: only an already-archived property can be
+ * purged, so nobody reaches this by way of a tidy-up. Everything
+ * cascades, and none of it comes back.
+ */
+export async function purgeProperty(formData: FormData): Promise<void> {
+  const propertyId = String(formData.get("property_id") ?? "");
+  if (!propertyId) return;
+
+  const supabase = await createClient();
+
+  // Refuse unless it has already been archived. Two deliberate acts,
+  // separated in time, before the evidence is destroyed.
+  const { data: property } = await supabase
+    .from("properties")
+    .select("id, archived_at")
+    .eq("id", propertyId)
+    .maybeSingle();
+  if (!property?.archived_at) return;
+
   await supabase.from("properties").delete().eq("id", propertyId);
 
   revalidatePath("/properties");
+  revalidatePath("/dashboard");
   redirect("/properties");
 }

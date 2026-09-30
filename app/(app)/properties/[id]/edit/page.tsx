@@ -1,8 +1,13 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PropertyForm } from "@/components/property-form";
-import { updateProperty, deleteProperty } from "../../actions";
-import { DeletePropertyButton } from "@/components/delete-property-button";
+import {
+  updateProperty,
+  archiveProperty,
+  restoreProperty,
+  purgeProperty,
+} from "../../actions";
+import { ArchiveProperty, PurgeProperty } from "@/components/archive-property";
 
 export default async function EditPropertyPage({
   params,
@@ -12,7 +17,7 @@ export default async function EditPropertyPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address, assigned_to")
+    .select("id, name, street_number, street_name, city, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address, assigned_to, archived_at, archive_reason")
     .eq("id", id)
     .single();
 
@@ -56,14 +61,52 @@ export default async function EditPropertyPage({
       </div>
 
       <div className="mt-10 border-t border-slate-200 pt-6">
-        <h2 className="text-sm font-semibold text-red-800">Danger zone</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Removing a property deletes its compliance history too.
-        </p>
-        <form action={deleteProperty} className="mt-3">
-          <input type="hidden" name="property_id" value={property.id} />
-          <DeletePropertyButton propertyName={property.name} />
-        </form>
+        {property.archived_at ? (
+          <>
+            <h2 className="text-sm font-semibold">Archived</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Archived{" "}
+              {new Date(property.archived_at as string).toLocaleDateString(
+                "en-US",
+                { timeZone: "America/Chicago" }
+              )}
+              {property.archive_reason ? ` — ${property.archive_reason}` : ""}.
+              Its compliance record is intact and Driplin is not monitoring or
+              billing for it.
+            </p>
+            <form action={restoreProperty} className="mt-3">
+              <input type="hidden" name="property_id" value={property.id} />
+              <button
+                type="submit"
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Restore to portfolio
+              </button>
+            </form>
+            {/* The permanent option lives here and nowhere else: you
+                have to archive first, so no tidy-up reaches it. */}
+            <form action={purgeProperty}>
+              <input type="hidden" name="property_id" value={property.id} />
+              <PurgeProperty propertyName={property.name} />
+            </form>
+          </>
+        ) : (
+          <>
+            <h2 className="text-sm font-semibold">Leaving the portfolio</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Archiving takes this property off the dashboard and stops
+              monitoring and billing for it. Its compliance history is kept —
+              you may still need it if a city or a board asks later — and you
+              can restore it at any time.
+            </p>
+            <form action={archiveProperty} className="mt-3">
+              <ArchiveProperty
+                propertyName={property.name}
+                propertyId={property.id}
+              />
+            </form>
+          </>
+        )}
       </div>
     </div>
   );

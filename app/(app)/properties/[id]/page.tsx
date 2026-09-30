@@ -80,7 +80,7 @@ export default async function PropertyDetailPage({
 
   const { data: property } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address")
+    .select("id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, property_class, irrigation_type, no_street_address, archived_at, archive_reason")
     .eq("id", id)
     .single();
   if (!property) notFound();
@@ -235,6 +235,27 @@ export default async function PropertyDetailPage({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{property.name}</h1>
+          {/* Say it before anything else on the page. Everything below is
+              a historical record, not a live compliance claim. */}
+          {property.archived_at && (
+            <p className="mt-2 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700">
+              <span className="font-semibold">Archived</span> — Driplin is not
+              monitoring this property and is not billing for it. Everything
+              below is the record up to{" "}
+              {new Date(property.archived_at as string).toLocaleDateString(
+                "en-US",
+                { timeZone: "America/Chicago" }
+              )}
+              . Restore it from{" "}
+              <a
+                href={`/properties/${property.id}/edit`}
+                className="underline"
+              >
+                Edit property
+              </a>
+              .
+            </p>
+          )}
           <p className="mt-1 text-sm text-slate-500">
             {property.no_street_address ? "" : `${property.street_number} `}
             {property.street_name}, {property.city} {property.zip} ·{" "}

@@ -74,6 +74,7 @@ export default async function DashboardPage() {
     .select(
       "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status)"
     )
+    .is("archived_at", null)
     .order("name");
 
   const { data: openAlerts } = await supabase

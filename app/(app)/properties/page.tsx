@@ -7,7 +7,16 @@ export default async function PropertiesPage() {
   const { data: properties, error } = await supabase
     .from("properties")
     .select("id, name, street_number, street_name, city, zip, unit_count, no_street_address")
+    .is("archived_at", null)
     .order("name");
+
+  // Archived properties keep their full compliance record and stay
+  // reachable, just out of the working list.
+  const { data: archived } = await supabase
+    .from("properties")
+    .select("id, name, city, archived_at, archive_reason")
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false });
 
   return (
     <div>
@@ -73,6 +82,47 @@ export default async function PropertiesPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* A kept record nobody can reach is no better than a deleted one. */}
+      {(archived?.length ?? 0) > 0 && (
+        <details className="mt-8 border-t border-slate-200 pt-6">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">
+            {archived!.length} archived propert
+            {archived!.length === 1 ? "y" : "ies"}
+          </summary>
+          <p className="mt-2 text-sm text-slate-500">
+            Not monitored and not billed for. Their compliance records are
+            intact, so you can still produce a board report or show a city what
+            these properties did.
+          </p>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {archived!.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{p.name}</p>
+                  <p className="text-xs text-slate-500">
+                    {p.city ? `${p.city} · ` : ""}archived{" "}
+                    {new Date(p.archived_at as string).toLocaleDateString(
+                      "en-US",
+                      { timeZone: "America/Chicago" }
+                    )}
+                    {p.archive_reason ? ` · ${p.archive_reason}` : ""}
+                  </p>
+                </div>
+                <Link
+                  href={`/properties/${p.id}`}
+                  className="text-sm font-medium text-sky-700 hover:underline"
+                >
+                  View record
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

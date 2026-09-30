@@ -63,7 +63,12 @@ export async function sendScheduledReports(
     );
 
     const [{ data: properties }, { data: members }] = await Promise.all([
-      supabase.from("properties").select("id, name").eq("org_id", org.id).limit(MAX_PROPERTIES_PER_RUN),
+      supabase
+        .from("properties")
+        .select("id, name")
+        .eq("org_id", org.id)
+        .is("archived_at", null)
+        .limit(MAX_PROPERTIES_PER_RUN),
       supabase.from("profiles").select("email").eq("org_id", org.id),
     ]);
 
