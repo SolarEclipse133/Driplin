@@ -9,6 +9,11 @@ import { syncControllerById } from "@/lib/controllers/sync";
 import { randomUUID } from "crypto";
 import { isValidStreetNumber } from "@/lib/rules/address";
 import { verifyControllerNow } from "@/lib/rules/run-compliance";
+import {
+  parseEnteredProgram,
+  scheduleChanged,
+} from "@/lib/controllers/entered-schedule";
+import type { ScheduleProgram } from "@/lib/controllers/types";
 import { saveVendorApiKey } from "@/lib/controllers/credentials";
 
 export type ConnectFormState = { error: string | null; success: string | null };
@@ -219,17 +224,18 @@ export async function addManualController(
 ): Promise<ManualControllerState> {
   const propertyId = String(formData.get("property_id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  const programName = String(formData.get("program_name") ?? "").trim() || "Irrigation";
-  const days = WEEKDAYS.filter((d) => formData.get(`day_${d}`) === "on");
-  const startTime = String(formData.get("start_time") ?? "").trim();
-  const duration = Number(formData.get("duration_minutes"));
 
   if (!propertyId) return { error: "Missing property.", success: null };
   if (!name) return { error: "Give this controller a name, e.g. \"Front entrance timer\".", success: null };
-  if (!/^\d{2}:\d{2}$/.test(startTime))
-    return { error: "Enter the start time as HH:MM, e.g. 05:30.", success: null };
-  if (!Number.isInteger(duration) || duration < 1)
-    return { error: "Enter how many minutes it runs for.", success: null };
+
+  // Same validation as correcting one later, so the two cannot drift.
+  const parsed = parseEnteredProgram({
+    name: String(formData.get("program_name") ?? ""),
+    days: WEEKDAYS.filter((d) => formData.get(`day_${d}`) === "on"),
+    startTime: String(formData.get("start_time") ?? "").trim(),
+    durationMinutes: formData.get("duration_minutes"),
+  });
+  if (!parsed.ok) return { error: parsed.error, success: null };
 
   const { supabase, orgId } = await requireOrg();
   if (!orgId) return { error: "You are no longer signed in.", success: null };
@@ -243,16 +249,7 @@ export async function addManualController(
       vendor_device_id: randomUUID(),
       name,
       entered_schedule: {
-        programs: [
-          {
-            vendorProgramId: randomUUID(),
-            name: programName,
-            enabled: true,
-            days,
-            startTime,
-            durationMinutes: duration,
-          },
-        ],
+        programs: [{ vendorProgramId: randomUUID(), ...parsed.program }],
       },
       entered_schedule_at: new Date().toISOString(),
     })
@@ -262,8 +259,15 @@ export async function addManualController(
   if (error || !inserted)
     return { error: "Could not add that controller.", success: null };
 
+  // What was claimed, and by whom. A manual controller's schedule is
+  // somebody's word, so the word itself belongs in the record.
+  await logEnteredSchedule(supabase, orgId, propertyId, inserted.id, name, [], [
+    { vendorProgramId: "new", ...parsed.program },
+  ]);
+
   // Judge it straight away, so the person sees whether what they just
-  // described is actually allowed.
+  // described is actually allowed. Note: NOT appliedByHand -- they have
+  // told us what the controller is set to, not that they just changed it.
   await verifyControllerNow(supabase, inserted.id);
 
   revalidatePath(`/properties/${propertyId}`);
@@ -271,5 +275,147 @@ export async function addManualController(
   return {
     error: null,
     success: `Added. Driplin will tell you what to change on ${name} whenever the rules move.`,
+  };
+}
+
+/**
+ * Record what somebody says a controller is set to.
+ *
+ * Every entry and every correction, with the previous version alongside
+ * it. "Prove this property watered legally last August" needs what was
+ * claimed in August, not the latest version of the story -- and on
+ * hardware Driplin cannot read, the claim is all there is.
+ */
+async function logEnteredSchedule(
+  supabase: Awaited<ReturnType<typeof requireOrg>>["supabase"],
+  orgId: string,
+  propertyId: string,
+  controllerId: string,
+  controllerName: string,
+  before: ScheduleProgram[],
+  after: ScheduleProgram[]
+): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let who = "A team member";
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", user.id)
+      .single();
+    who = profile?.full_name?.trim() || profile?.email || who;
+  }
+
+  const describe = (p: ScheduleProgram[]) =>
+    p.length === 0
+      ? "nothing recorded"
+      : p
+          .map(
+            (x) =>
+              `${x.days.join("/")} at ${x.startTime} for ${x.durationMinutes} min`
+          )
+          .join("; ");
+
+  await supabase.from("compliance_events").insert({
+    org_id: orgId,
+    property_id: propertyId,
+    controller_id: controllerId,
+    type: "schedule_entered",
+    summary:
+      before.length === 0
+        ? `${who} recorded what ${controllerName} is set to: ${describe(after)}. Driplin cannot read this controller, so this is their word rather than a checked fact.`
+        : `${who} corrected what ${controllerName} is set to, from ${describe(before)} to ${describe(after)}.`,
+    details: { enteredBy: who, before, after },
+  });
+}
+
+/**
+ * Correct what a manual controller is recorded as being set to.
+ *
+ * Before this, the schedule could only be given once, when the
+ * controller was added. A typo was permanent: Driplin judged the wrong
+ * schedule forever, sent a landscaper after a problem that did not
+ * exist, and filed the result as evidence for a board.
+ */
+export async function updateEnteredSchedule(
+  _prev: ManualControllerState,
+  formData: FormData
+): Promise<ManualControllerState> {
+  const controllerId = String(formData.get("controller_id") ?? "");
+  const propertyId = String(formData.get("property_id") ?? "");
+  if (!controllerId) return { error: "Missing controller.", success: null };
+
+  const parsed = parseEnteredProgram({
+    name: String(formData.get("program_name") ?? ""),
+    days: WEEKDAYS.filter((d) => formData.get(`day_${d}`) === "on"),
+    startTime: String(formData.get("start_time") ?? "").trim(),
+    durationMinutes: formData.get("duration_minutes"),
+  });
+  if (!parsed.ok) return { error: parsed.error, success: null };
+
+  const { supabase, orgId } = await requireOrg();
+  if (!orgId) return { error: "You are no longer signed in.", success: null };
+
+  const { data: controller } = await supabase
+    .from("controllers")
+    .select("id, name, vendor, entered_schedule")
+    .eq("id", controllerId)
+    .single();
+  if (!controller) return { error: "Controller not found.", success: null };
+  if (controller.vendor !== "manual") {
+    // A connected controller's schedule is read from the vendor, so an
+    // entered one would be overwritten on the next sync and mislead
+    // everyone in between.
+    return {
+      error:
+        "This controller is connected, so Driplin reads its schedule directly. Change it in the manufacturer's app.",
+      success: null,
+    };
+  }
+
+  const before =
+    ((controller.entered_schedule as { programs?: ScheduleProgram[] } | null)
+      ?.programs) ?? [];
+  // Keep the existing program's id so the history lines up rather than
+  // looking like one program was deleted and another created.
+  const after: ScheduleProgram[] = [
+    { vendorProgramId: before[0]?.vendorProgramId ?? randomUUID(), ...parsed.program },
+  ];
+
+  if (!scheduleChanged(before, after)) {
+    return { error: null, success: "No change — that is what was already recorded." };
+  }
+
+  const { error } = await supabase
+    .from("controllers")
+    .update({
+      entered_schedule: { programs: after },
+      entered_schedule_at: new Date().toISOString(),
+    })
+    .eq("id", controllerId);
+  if (error) return { error: "Could not save that schedule.", success: null };
+
+  await logEnteredSchedule(
+    supabase,
+    orgId,
+    propertyId,
+    controllerId,
+    controller.name as string,
+    before,
+    after
+  );
+
+  // Re-judge against the corrected schedule. Not appliedByHand: this is
+  // a correction to what Driplin was told, not a claim that the hardware
+  // just changed.
+  await verifyControllerNow(supabase, controllerId);
+
+  revalidatePath(`/properties/${propertyId}`);
+  revalidatePath("/dashboard");
+  return {
+    error: null,
+    success: "Updated. Driplin has re-checked it against the current rules.",
   };
 }

@@ -56,7 +56,10 @@ export async function completeWorkOrder(
   );
   if (!photo.ok) return fail(photo.error);
 
-  const check = await verifyControllerNow(supabase, order.controllerId);
+  const check = await verifyControllerNow(supabase, order.controllerId, {
+    // The person is telling us they have just changed the hardware.
+    appliedByHand: true,
+  });
   if (!check.ok) return fail(check.message);
 
   const who = name || order.vendorName || "Vendor";

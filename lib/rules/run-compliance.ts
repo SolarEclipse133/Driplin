@@ -613,7 +613,20 @@ export interface SingleControllerCheck {
 
 export async function verifyControllerNow(
   supabase: SupabaseClient,
-  controllerId: string
+  controllerId: string,
+  /**
+   * Is somebody ASSERTING they have just made the change by hand?
+   *
+   * This distinction only bites on a controller Driplin cannot read,
+   * where the stored schedule is whatever a person last said it was.
+   * Passing true records the corrected schedule as the new claim --
+   * right when a manager or a vendor says "done", and wrong the rest of
+   * the time, because it would file a change nobody made.
+   *
+   * It defaults to false so a new caller gets the honest behaviour
+   * without having to know any of this.
+   */
+  options: { appliedByHand?: boolean } = {}
 ): Promise<SingleControllerCheck> {
   const { data: c } = await supabase
     .from("controllers")
@@ -679,12 +692,28 @@ export async function verifyControllerNow(
     .maybeSingle();
   const stage = (stageRow?.current_stage ?? 0) as DroughtStage;
 
+  // Judge this the same way the nightly sweep does, variance included.
+  // If this path ignored the variance, clicking "I've updated it" on a
+  // property watering legally under an approval would report a
+  // violation the nightly run had just cleared.
+  const { data: varianceRows } = await supabase
+    .from("property_variances")
+    .select(
+      "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
+    )
+    .eq("property_id", property.id);
+  const vstatus = varianceStatus(
+    (varianceRows ?? []).map(toVariance),
+    stage
+  );
+
   const result = evaluateCompliance(
     programs,
     digit,
     stage,
     jurisdictionId,
-    profileOf(property, meter)
+    profileOf(property, meter),
+    vstatus.active
   );
 
   // A controller Driplin cannot read cannot be verified. Record what
@@ -692,7 +721,14 @@ export async function verifyControllerNow(
   // word rather than a checked fact — that distinction is the whole
   // reason anyone trusts the rest of the record.
   if (c.vendor === "manual") {
-    await saveEnteredSchedule(supabase, controllerId, result.correctedPrograms);
+    // Only record the corrected schedule as the new claim when somebody
+    // has actually said they applied it. Doing it on a plain re-check
+    // would quietly rewrite their entry to the compliant version and
+    // then report the controller as set that way -- a change nobody
+    // made, filed as evidence.
+    if (options.appliedByHand) {
+      await saveEnteredSchedule(supabase, controllerId, result.correctedPrograms);
+    }
     await supabase
       .from("controllers")
       .update({
@@ -713,7 +749,11 @@ export async function verifyControllerNow(
       ok: true,
       compliant: null,
       remainingProblems: [],
-      message: `Recorded, and the schedule updated to what the ${result.rulesSnapshot.stageName} rules require. Driplin can't read this controller, so this is logged as your word rather than a checked fact.`,
+      message: options.appliedByHand
+        ? `Recorded, and the schedule updated to what the ${result.rulesSnapshot.stageName} rules require. Driplin can't read this controller, so this is logged as your word rather than a checked fact.`
+        : result.manualInstructions.length > 0
+          ? `Driplin can't read this controller, so it has judged the schedule you entered against the ${result.rulesSnapshot.stageName} rules. It needs changing by hand: ${result.manualInstructions.join(" ")}`
+          : `Driplin can't read this controller, so it has judged the schedule you entered against the ${result.rulesSnapshot.stageName} rules. Nothing needs changing.`,
     };
   }
 

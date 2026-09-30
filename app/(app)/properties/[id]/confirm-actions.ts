@@ -64,7 +64,10 @@ export async function confirmManualFix(
   );
   if (!photo.ok) return fail(photo.error);
 
-  const check = await verifyControllerNow(supabase, controllerId);
+  const check = await verifyControllerNow(supabase, controllerId, {
+    // The person is telling us they have just changed the hardware.
+    appliedByHand: true,
+  });
   if (!check.ok) return fail(check.message);
 
   const who = profile.full_name?.trim() || profile.email || "A team member";

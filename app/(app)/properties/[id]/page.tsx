@@ -19,6 +19,7 @@ import { getVendorApiKey } from "@/lib/controllers/credentials";
 import { SecretKeyError } from "@/lib/crypto/secrets";
 import { MeterAddressForm } from "@/components/meter-address-form";
 import { AddManualController } from "@/components/add-manual-controller";
+import { EditEnteredSchedule } from "@/components/edit-entered-schedule";
 import { BoardLink } from "@/components/board-link";
 import { createBoardLink, revokeBoardLink } from "./board-actions";
 import { VariancePanel } from "@/components/variance-panel";
@@ -30,6 +31,7 @@ import {
   connectVendorDevice,
   setMeterAddress,
   addManualController,
+  updateEnteredSchedule,
   removeController,
   saveVendorKey,
   syncController,
@@ -167,7 +169,7 @@ export default async function PropertyDetailPage({
   const { data: controllers } = await supabase
     .from("controllers")
     .select(
-      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, cached_schedules(schedule, fetched_at), meter_street_number, meter_no_street_address, meter_label"
+      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, entered_schedule_at, cached_schedules(schedule, fetched_at), meter_street_number, meter_no_street_address, meter_label"
     )
     .eq("property_id", id)
     .order("created_at");
@@ -450,6 +452,18 @@ export default async function PropertyDetailPage({
                   </ol>
                 </div>
               )}
+              {/* An unconnected controller's schedule is somebody's word,
+                  so it has to be correctable. */}
+              {c.vendor === "manual" && (
+                <EditEnteredSchedule
+                  action={updateEnteredSchedule}
+                  controllerId={c.id}
+                  propertyId={property.id}
+                  program={programs[0] ?? null}
+                  enteredAt={(c.entered_schedule_at as string | null) ?? null}
+                />
+              )}
+
               <ManualFixPanel
                 action={confirmManualFix}
                 controllerId={c.id}
