@@ -5,7 +5,12 @@ import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 import { upgradeLegacyCredentials } from "@/lib/controllers/credentials";
 import { sendScheduledReports } from "@/lib/reports/send";
 import { startRun, finishRun } from "@/lib/jobs/runs";
-import { reportServerError } from "@/lib/observability/report";
+import {
+  reportServerError,
+  reportServerWarning,
+} from "@/lib/observability/report";
+import { canProcessAnother, mustTryFirst } from "@/lib/jobs/budget";
+import { dispatchAlertNotifications } from "@/lib/notifications/dispatch";
 
 export const dynamic = "force-dynamic";
 // 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
@@ -42,6 +47,7 @@ export async function GET(request: NextRequest) {
   // Record that this run happened. Its absence is what tells anyone
   // that monitoring has stopped, so it is opened before any work and
   // closed whatever the outcome.
+  const startedAt = Date.now();
   const runId = await startRun(supabase);
 
   try {
@@ -53,15 +59,77 @@ export async function GET(request: NextRequest) {
 
   const indicators = await runAllIndicatorChecks(supabase);
 
-  const { data: orgs } = await supabase.from("organizations").select("id");
+  // Longest-waiting first. A night that cannot reach everyone then starves
+  // a different organization each time, rather than the same ones forever.
+  const { data: orgs } = await supabase
+    .from("organizations")
+    .select("id")
+    .order("last_swept_at", { ascending: true, nullsFirst: true });
+
+  const budget = {
+    startedAt,
+    limitMs: maxDuration * 1000,
+    // Held back for closing the run record and raising the alert below.
+    // Spending the whole budget on organizations is how a run ends with
+    // no record of having ended.
+    reserveMs: 12_000,
+  };
+
   const complianceRuns: Record<string, unknown> = {};
+  const skipped: string[] = [];
+  let stoppedBecause: string | null = null;
+
   for (const org of orgs ?? []) {
+    const done = Object.keys(complianceRuns).length;
+    const verdict = canProcessAnother(budget, Date.now(), done);
+
+    // Always attempt the first: a run that checks nobody, night after
+    // night, looks exactly like a working system.
+    if (!verdict.proceed && !mustTryFirst(done)) {
+      stoppedBecause ??= verdict.reason;
+      skipped.push(org.id as string);
+      continue;
+    }
+
     complianceRuns[org.id] = await runComplianceForOrg(supabase, org.id);
+    // Stamp it only once the sweep actually finished, so an organization
+    // cut short keeps its place at the front of the queue.
+    await supabase
+      .from("organizations")
+      .update({ last_swept_at: new Date().toISOString() })
+      .eq("id", org.id);
   }
 
-  // Board reports last: compliance is the job that must not be starved
-  // if the run is running out of time.
-  const reports = await sendScheduledReports(supabase);
+  // Outgrowing one invocation is an operational fact somebody has to act
+  // on, not something to discover from a quiet dashboard.
+  if (skipped.length > 0) {
+    reportServerWarning(
+      "cron.nightly_incomplete",
+      `Ran out of time after ${Object.keys(complianceRuns).length} organizations`,
+      { skipped: skipped.length, reason: stoppedBecause }
+    );
+    const { data: alert } = await supabase
+      .from("alerts")
+      .insert({
+        org_id: null,
+        type: "lcra_threshold",
+        severity: "critical",
+        message: `Driplin's nightly run could not check ${skipped.length} organization(s) in time (${stoppedBecause}). They are first in the queue tomorrow, but the job has outgrown one invocation and needs splitting.`,
+        details: { skipped: skipped.length, reason: stoppedBecause },
+      })
+      .select("id, org_id, property_id, type, message, details")
+      .single();
+    if (alert) await dispatchAlertNotifications(supabase, alert);
+  }
+
+  // Board reports last: compliance is the job that must not be starved if
+  // the run is running out of time. Now actually enforced rather than only
+  // intended -- a report is a nicety, and overrunning here would kill the
+  // run before it could close its own record or say what it skipped.
+  const timeForReports = canProcessAnother(budget, Date.now(), 1).proceed;
+  const reports = timeForReports
+    ? await sendScheduledReports(supabase)
+    : { sent: 0, skipped: "no time left in this run" };
 
     await finishRun(supabase, runId, {
       status: "ok",
@@ -69,6 +137,11 @@ export async function GET(request: NextRequest) {
         credentials,
         reports,
         organizations: Object.keys(complianceRuns).length,
+        // Organizations the run could not reach. Anything above zero means
+        // the job no longer fits in one invocation.
+        skipped: skipped.length,
+        stoppedBecause,
+        elapsedMs: Date.now() - startedAt,
         // Work orders chased for going unanswered, across all orgs.
         chased: Object.values(complianceRuns).reduce<number>(
           (n, r) => n + ((r as { chased?: number }).chased ?? 0),
