@@ -10,6 +10,8 @@ import { NotificationWarning } from "@/components/notification-warning";
 import { MonitoringWarning } from "@/components/monitoring-warning";
 import { MonitoringGapNotice } from "@/components/monitoring-gap-notice";
 import { describeGap, monitoringGap } from "@/lib/rules/monitoring-gap";
+import { GettingStarted } from "@/components/getting-started";
+import { setupProgress } from "@/lib/onboarding/progress";
 import { getMonitoringHealth } from "@/lib/jobs/runs";
 import { getNotificationHealth } from "@/lib/notifications/health";
 import { formatDuration } from "@/lib/rules/benchmarks";
@@ -102,7 +104,7 @@ export default async function DashboardPage() {
     supabase
     .from("properties")
     .select(
-      "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status, compliance_detail)"
+      "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status, compliance_detail, compliance_checked_at)"
     )
     .is("archived_at", null)
     .order("name"),
@@ -164,6 +166,17 @@ export default async function DashboardPage() {
   );
   const gapMessage = describeGap(gap);
 
+  // Has anything ever actually been checked? Until it has, the account is
+  // still being set up, however many properties are in it.
+  const everChecked = rows.some((r) =>
+    r.controllers.some((c) => c.compliance_checked_at !== null)
+  );
+  const progress = setupProgress({
+    propertyCount: rows.length,
+    monitoredCount: gap.monitored,
+    everChecked,
+  });
+
   const benchmarks = await loadBenchmarks(supabase, rows);
 
   // Only show stage banners for cities this portfolio actually has
@@ -180,6 +193,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      <GettingStarted progress={progress} />
       <StageBanner jurisdictionIds={orgJurisdictions} />
       <MonitoringWarning health={jobHealth} />
       <NotificationWarning health={notificationHealth} />
@@ -243,13 +257,12 @@ export default async function DashboardPage() {
         </Link>
       </div>
       {rows.length === 0 ? (
+        // The checklist above already says what to do and why, so this
+        // only states the fact. Saying it twice makes the page feel
+        // unconsidered and buries the part that explains itself.
         <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
           <p className="text-sm text-slate-500">
-            No properties yet.{" "}
-            <Link href="/properties/new" className="text-sky-700 underline">
-              Add your first property
-            </Link>{" "}
-            to start tracking compliance.
+            Your properties will appear here.
           </p>
         </div>
       ) : (
