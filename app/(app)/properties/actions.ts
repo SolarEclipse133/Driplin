@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getEntitlements } from "@/lib/billing/subscription";
+import { isUuid } from "@/lib/security/ownership";
 import { isValidStreetNumber } from "@/lib/rules/address";
 import { JURISDICTIONS, jurisdictionForCity } from "@/lib/jurisdictions";
 
@@ -215,7 +216,8 @@ export async function restoreProperty(formData: FormData): Promise<void> {
 
   revalidatePath("/properties");
   revalidatePath("/dashboard");
-  redirect(`/properties/${propertyId}`);
+  // Only ever redirect to an id-shaped path; see isUuid.
+  redirect(isUuid(propertyId) ? `/properties/${propertyId}` : "/properties");
 }
 
 /**

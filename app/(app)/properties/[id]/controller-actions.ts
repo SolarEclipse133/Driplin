@@ -15,6 +15,7 @@ import {
 } from "@/lib/controllers/entered-schedule";
 import type { ScheduleProgram } from "@/lib/controllers/types";
 import { saveVendorApiKey } from "@/lib/controllers/credentials";
+import { NOT_YOURS, ownsProperty } from "@/lib/security/ownership";
 
 export type ConnectFormState = { error: string | null; success: string | null };
 
@@ -90,6 +91,9 @@ export async function connectVendorDevice(
 
   const { supabase, orgId } = await requireOrg();
   if (!orgId) return;
+  // SECURITY: see ownsProperty — RLS checks the new row's own org_id, not
+  // the property it points at.
+  if (!(await ownsProperty(supabase, propertyId))) return;
 
   const { data: inserted } = await supabase
     .from("controllers")
@@ -114,6 +118,9 @@ export async function addDemoController(
 ): Promise<void> {
   const { supabase, orgId } = await requireOrg();
   if (!orgId) return;
+  // SECURITY: see ownsProperty — RLS checks the new row's own org_id, not
+  // the property it points at.
+  if (!(await ownsProperty(supabase, propertyId))) return;
 
   const { data: inserted } = await supabase
     .from("controllers")
@@ -239,6 +246,11 @@ export async function addManualController(
 
   const { supabase, orgId } = await requireOrg();
   if (!orgId) return { error: "You are no longer signed in.", success: null };
+
+  // SECURITY: never attach a controller to a property the caller does not
+  // own. RLS checks the new row's own org_id, not the property beside it.
+  if (!(await ownsProperty(supabase, propertyId)))
+    return { error: NOT_YOURS, success: null };
 
   const { data: inserted, error } = await supabase
     .from("controllers")

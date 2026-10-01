@@ -383,7 +383,12 @@ export async function runComplianceForOrg(
       .select(
         "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
       )
-      .eq("property_id", property.id);
+      .eq("property_id", property.id)
+      // SECURITY: the service role bypasses RLS, so this filter is the
+      // only thing scoping the read. Without it a variance row belonging
+      // to another organization but pointing at this property would be
+      // applied -- see migration 0029.
+      .eq("org_id", orgId);
     const variances = (varianceRows ?? []).map(toVariance);
     const vstatus = varianceStatus(variances, stage as DroughtStage);
 
@@ -869,7 +874,10 @@ export async function verifyControllerNow(
     .select(
       "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
     )
-    .eq("property_id", property.id);
+    .eq("property_id", property.id)
+    // SECURITY: as above. c.org_id is the controller Driplin just read,
+    // not anything supplied by a caller.
+    .eq("org_id", c.org_id);
   const vstatus = varianceStatus(
     (varianceRows ?? []).map(toVariance),
     stage

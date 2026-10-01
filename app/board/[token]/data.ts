@@ -54,7 +54,7 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
 
   const { data: link } = await supabase
     .from("board_links")
-    .select("id, property_id, expires_at, revoked_at")
+    .select("id, org_id, property_id, expires_at, revoked_at")
     .eq("token_hash", hashLinkToken(token))
     .maybeSingle();
 
@@ -68,6 +68,11 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
       "name, street_number, street_name, city, state, zip, jurisdiction, no_street_address, archived_at, organizations(name), controllers(compliance_status, compliance_checked_at, compliance_detail)"
     )
     .eq("id", link.property_id as string)
+    // SECURITY: the service role bypasses RLS here, so the link and the
+    // property must be shown to agree on the owner. A link minted against
+    // somebody else's property resolves to nothing. Migration 0029 stops
+    // such a link existing; this stops one working if it ever does.
+    .eq("org_id", link.org_id as string)
     .maybeSingle();
   if (!property) return null;
 

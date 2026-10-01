@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { WEEKDAYS, type Weekday } from "@/lib/controllers/types";
+import { NOT_YOURS } from "@/lib/security/ownership";
 import type { VarianceKind } from "@/lib/rules/variance";
 
 export type VarianceState = { error: string | null; success: string | null };
@@ -77,14 +78,17 @@ export async function addVariance(
     .single();
   if (!profile) return fail("Your account has no organization.");
 
-  // The stage in force now is the stage it was granted under. Austin
-  // narrows which variances stay valid as stages tighten, so recording
-  // this is what lets Driplin flag it later.
+  // SECURITY: this property must belong to the caller's organization.
+  // The read below is RLS-scoped, so a stranger's property comes back
+  // null -- and it used to be used with `?.` and inserted anyway, which
+  // let anyone attach a forged variance to anybody's property and have
+  // the service-role nightly job apply it.
   const { data: property } = await supabase
     .from("properties")
     .select("jurisdiction")
     .eq("id", propertyId)
-    .single();
+    .maybeSingle();
+  if (!property) return fail(NOT_YOURS);
   const { data: stageRow } = await supabase
     .from("drought_stage_status")
     .select("current_stage")

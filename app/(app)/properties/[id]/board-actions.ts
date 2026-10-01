@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { generateLinkToken, hashLinkToken } from "@/lib/security/tokens";
+import { NOT_YOURS, ownsProperty } from "@/lib/security/ownership";
 
 export type BoardLinkState = {
   error: string | null;
@@ -37,6 +38,12 @@ export async function createBoardLink(
     .eq("id", user.id)
     .single();
   if (!profile?.org_id) return fail("Your account has no organization.");
+
+  // SECURITY: a board link is a public URL to this property's compliance
+  // record. Without this check anyone signed in could mint one for
+  // somebody else's property -- /board/[token] resolves it with the
+  // service role, so RLS never got a say.
+  if (!(await ownsProperty(supabase, propertyId))) return fail(NOT_YOURS);
 
   // Replacing an existing link revokes it. A board should have one live
   // link, and handing out a second without killing the first means the
