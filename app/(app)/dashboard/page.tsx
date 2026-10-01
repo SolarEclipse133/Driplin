@@ -90,31 +90,38 @@ function MetricCard({
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  const { data: properties } = await supabase
+  // Four independent reads. Run together rather than one after another:
+  // each is a round trip, and on a cold start four of them in series is
+  // most of the delay before anything appears.
+  const [
+    { data: properties },
+    { data: openAlerts },
+    { data: recentAlerts },
+    { data: corrections },
+  ] = await Promise.all([
+    supabase
     .from("properties")
     .select(
       "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status, compliance_detail)"
     )
     .is("archived_at", null)
-    .order("name");
-
-  const { data: openAlerts } = await supabase
+    .order("name"),
+    supabase
     .from("alerts")
     .select("id")
     .eq("acknowledged", false)
-    .not("org_id", "is", null);
-
-  const { data: recentAlerts } = await supabase
+    .not("org_id", "is", null),
+    supabase
     .from("alerts")
     .select("id, message, severity, acknowledged, created_at")
     .not("org_id", "is", null)
     .order("created_at", { ascending: false })
-    .limit(8);
-
-  const { data: corrections } = await supabase
+    .limit(8),
+    supabase
     .from("compliance_events")
     .select("details")
-    .eq("type", "auto_correction");
+    .eq("type", "auto_correction"),
+  ]);
 
   const gallonsPerWeek = (corrections ?? []).reduce((sum, e) => {
     const g = (e.details as { estimatedWeeklyGallonsSaved?: number } | null)
@@ -165,9 +172,11 @@ export default async function DashboardPage() {
     ...new Set(rows.map((r) => r.jurisdiction ?? "austin")),
   ];
 
-  const earlyWarnings = await getEarlyWarningNotes(supabase, orgJurisdictions);
-  const notificationHealth = await getNotificationHealth(supabase);
-  const jobHealth = await getMonitoringHealth(supabase);
+  const [earlyWarnings, notificationHealth, jobHealth] = await Promise.all([
+    getEarlyWarningNotes(supabase, orgJurisdictions),
+    getNotificationHealth(supabase),
+    getMonitoringHealth(supabase),
+  ]);
 
   return (
     <div>

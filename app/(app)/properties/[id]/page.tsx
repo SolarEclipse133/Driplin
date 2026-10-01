@@ -98,15 +98,58 @@ export default async function PropertyDetailPage({
     .maybeSingle();
   const stageForProperty = (stageRow?.current_stage ?? 0) as DroughtStage;
 
-  // Any approved variance on this property. A Large Property variance
-  // is exactly the case Driplin's customers hit: a common area that
-  // cannot be covered inside one city window.
-  const { data: varianceRows } = await supabase
+  // Six reads that need only the property id. Run together: each is a
+  // round trip, and in series they were most of the wait before this page
+  // rendered anything at all.
+  const [
+    { data: varianceRows },
+    { data: boardLinkRow },
+    { data: confirmations },
+    { data: vendorLinks },
+    { data: openOrders },
+    { data: controllers },
+  ] = await Promise.all([
+    supabase
     .from("property_variances")
     .select(
       "id, kind, reference, approved_on, expires_on, allowed_days, allowed_windows, approved_at_stage, notes"
     )
-    .eq("property_id", id);
+    .eq("property_id", id),
+    supabase
+    .from("board_links")
+    .select("id, label, created_at, expires_at, last_viewed_at")
+    .eq("property_id", id)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle(),
+    supabase
+    .from("manual_fix_confirmations")
+    .select("id, controller_id, confirmed_by_name, confirmed_via, note, verified, created_at, flagged_at, photo_path")
+    .eq("property_id", id)
+    .order("created_at", { ascending: false })
+    .limit(10),
+    supabase
+    .from("vendor_properties")
+    .select("vendors(id, name, email)")
+    .eq("property_id", id),
+    supabase
+    .from("work_orders")
+    .select("id, controller_id")
+    .eq("property_id", id)
+    .eq("status", "open"),
+    supabase
+    .from("controllers")
+    .select(
+      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, entered_schedule_at, cached_schedules(schedule, fetched_at), meter_street_number, meter_no_street_address, meter_label"
+    )
+    .eq("property_id", id)
+    .order("created_at"),
+  ]);
+
+  // Any approved variance on this property. A Large Property variance
+  // is exactly the case Driplin's customers hit: a common area that
+  // cannot be covered inside one city window.
   const variances = (varianceRows ?? []).map((row) => ({
     id: String(row.id),
     kind: row.kind as VarianceKind,
@@ -127,53 +170,29 @@ export default async function PropertyDetailPage({
     variances.map((v) => [v.id, describeVariance(v)])
   );
 
-  const { data: boardLinkRow } = await supabase
-    .from("board_links")
-    .select("id, label, created_at, expires_at, last_viewed_at")
-    .eq("property_id", id)
-    .is("revoked_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
-  const { data: confirmations } = await supabase
-    .from("manual_fix_confirmations")
-    .select("id, controller_id, confirmed_by_name, confirmed_via, note, verified, created_at, flagged_at, photo_path")
-    .eq("property_id", id)
-    .order("created_at", { ascending: false })
-    .limit(10);
 
   // Photos live in a private bucket; hand the browser short-lived
   // signed links rather than making the bucket public.
   const photoUrls = new Map<string, string>();
-  for (const f of confirmations ?? []) {
-    if (!f.photo_path) continue;
-    const url = await signedPhotoUrl(supabase, f.photo_path);
-    if (url) photoUrls.set(f.id, url);
+  const signed = await Promise.all(
+    (confirmations ?? [])
+      .filter((f) => f.photo_path)
+      .map(async (f) => ({
+        id: f.id as string,
+        url: await signedPhotoUrl(supabase, f.photo_path as string),
+      }))
+  );
+  for (const { id: confirmationId, url } of signed) {
+    if (url) photoUrls.set(confirmationId, url);
   }
 
   // Vendors who service this property, plus any jobs already out.
-  const { data: vendorLinks } = await supabase
-    .from("vendor_properties")
-    .select("vendors(id, name, email)")
-    .eq("property_id", id);
   const propertyVendors = (vendorLinks ?? [])
     .map((l) => (Array.isArray(l.vendors) ? l.vendors[0] : l.vendors))
     .filter((v): v is { id: string; name: string; email: string | null } => !!v);
 
-  const { data: openOrders } = await supabase
-    .from("work_orders")
-    .select("id, controller_id")
-    .eq("property_id", id)
-    .eq("status", "open");
 
-  const { data: controllers } = await supabase
-    .from("controllers")
-    .select(
-      "id, vendor, vendor_device_id, name, status, last_seen_at, compliance_status, compliance_detail, compliance_checked_at, entered_schedule_at, cached_schedules(schedule, fetched_at), meter_street_number, meter_no_street_address, meter_label"
-    )
-    .eq("property_id", id)
-    .order("created_at");
 
   // For each connectable vendor: does the org have a key, and if so,
   // which of that account's devices aren't connected here yet?
