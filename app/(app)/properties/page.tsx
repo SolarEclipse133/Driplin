@@ -25,6 +25,12 @@ export default async function PropertiesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Properties</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/export/portfolio"
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+          >
+            Export CSV
+          </a>
           <ImportProperties action={importProperties} />
           <Link
             href="/properties/new"

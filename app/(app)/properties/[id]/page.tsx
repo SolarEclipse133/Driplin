@@ -25,6 +25,7 @@ import { createBoardLink, revokeBoardLink } from "./board-actions";
 import { VariancePanel } from "@/components/variance-panel";
 import { addVariance, removeVariance } from "./variance-actions";
 import { describeVariance, varianceStatus } from "@/lib/rules/variance";
+import { centralCalendarDate } from "@/lib/dates/central";
 import type { Variance, VarianceKind } from "@/lib/rules/variance";
 import {
   addDemoController,
@@ -662,7 +663,7 @@ export default async function PropertyDetailPage({
               id="from"
               name="from"
               type="date"
-              defaultValue={reportFrom.toISOString().slice(0, 10)}
+              defaultValue={centralCalendarDate(reportFrom.getTime())}
               className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
@@ -674,12 +675,22 @@ export default async function PropertyDetailPage({
               id="to"
               name="to"
               type="date"
-              defaultValue={reportTo.toISOString().slice(0, 10)}
+              defaultValue={centralCalendarDate(reportTo.getTime())}
               className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
           <button className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800">
             Download PDF report
+          </button>
+          {/* The same period, as data. A board reads the PDF; an auditor
+              or a city wants the rows. */}
+          <button
+            formAction="/api/export/activity"
+            name="property"
+            value={property.id}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+          >
+            Download CSV log
           </button>
         </form>
       </div>
