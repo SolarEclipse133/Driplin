@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { PasswordField } from "./password-field";
 
 /**
  * Change your password while signed in.
@@ -85,39 +86,27 @@ export function ChangePassword() {
 
   return (
     <form onSubmit={handleSubmit} className="mt-3 max-w-md space-y-3">
-      <label className="block text-sm">
-        <span className="font-medium">Current password</span>
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-          required
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="font-medium">New password</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-          required
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="font-medium">Confirm new password</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-          required
-        />
-      </label>
+      <PasswordField
+        label="Current password"
+        autoComplete="current-password"
+        value={current}
+        onChange={(e) => setCurrent(e.target.value)}
+        required
+      />
+      <PasswordField
+        label="New password"
+        autoComplete="new-password"
+        value={next}
+        onChange={(e) => setNext(e.target.value)}
+        required
+      />
+      <PasswordField
+        label="Confirm new password"
+        autoComplete="new-password"
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        required
+      />
 
       {error && (
         <p

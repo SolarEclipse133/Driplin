@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PasswordField } from "@/components/password-field";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -141,16 +142,13 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium">
-            Password
-          </label>
-          <input
+          <PasswordField
             id="password"
-            type="password"
+            label="Password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="At least 8 characters"
           />
         </div>

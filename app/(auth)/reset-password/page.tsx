@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PasswordField } from "@/components/password-field";
 
 /**
  * Set a new password, having arrived from the emailed link.
@@ -100,29 +101,21 @@ export default function ResetPasswordPage() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <label className="block text-sm">
-          <span className="font-medium">New password</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-            required
-          />
-        </label>
+        <PasswordField
+          label="New password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-        <label className="block text-sm">
-          <span className="font-medium">Confirm new password</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-            required
-          />
-        </label>
+        <PasswordField
+          label="Confirm new password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+        />
 
         {error && (
           <p

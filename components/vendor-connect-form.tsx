@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { ConnectFormState } from "@/app/(app)/properties/[id]/controller-actions";
+import { PasswordField } from "./password-field";
 
 /** Shared API-key form for connecting a vendor account (Rachio, Hydrawise). */
 export function VendorConnectForm({
@@ -24,19 +25,13 @@ export function VendorConnectForm({
   return (
     <form action={formAction} className="mt-3 space-y-3" noValidate>
       <div>
-        <label
-          htmlFor={`api_key_${vendorLabel}`}
-          className="block text-sm font-medium"
-        >
-          {vendorLabel} API key
-        </label>
-        <input
+        <PasswordField
           id={`api_key_${vendorLabel}`}
           name="api_key"
-          type="password"
+          label={`${vendorLabel} API key`}
           autoComplete="off"
           placeholder={keyHint}
-          className="mt-1 w-full max-w-md rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          className="text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
         <p className="mt-1 text-xs text-slate-500">
           {keyHint}. Stored once for your whole company.
