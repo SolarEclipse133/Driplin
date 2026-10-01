@@ -435,6 +435,28 @@ export default async function PropertyDetailPage({
                   No watering programs found on this controller.
                 </p>
               )}
+              {/* Driplin has lost sight of this controller. Said before
+                  the schedule below, because that schedule is a memory. */}
+              {(c.compliance_detail as { unreadable?: boolean } | null)
+                ?.unreadable && (
+                <div className="mt-3 rounded-md border-2 border-orange-300 bg-orange-50 p-3">
+                  <p className="text-sm font-semibold text-orange-900">
+                    Driplin is not checking this controller
+                  </p>
+                  <p className="mt-1 text-sm text-orange-900">
+                    {((c.compliance_detail as {
+                      manualInstructions?: string[];
+                    } | null)?.manualInstructions ?? []).join(" ")}
+                  </p>
+                  <p className="mt-2 text-xs text-orange-800">
+                    Usually a vendor API key that was rotated or revoked.
+                    Reconnect it below, and Driplin will resume the nightly
+                    checks. Until then it makes no claim about this
+                    property&apos;s compliance.
+                  </p>
+                </div>
+              )}
+
               {(c.compliance_detail as { uncertified?: boolean } | null)
                 ?.uncertified && (
                 <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">

@@ -56,6 +56,10 @@ import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
 import { varianceStatus, type Variance, type VarianceKind } from "./variance";
 import { decideChase } from "./work-order-chase";
+import {
+  describeStaleness,
+  scheduleFreshness,
+} from "@/lib/controllers/freshness";
 import { estimateWeeklySavings } from "./savings";
 
 /**
@@ -128,6 +132,66 @@ async function raiseVarianceWarning(
   if (alert) await dispatchAlertNotifications(supabase, alert);
 }
 
+/**
+ * Tell someone Driplin has lost sight of a controller.
+ *
+ * Losing access is the customer's to fix -- a rotated key, a revoked
+ * authorisation -- so it has to reach them, not sit in a status column.
+ * Once a week while it lasts: it is a standing condition rather than an
+ * event, and a nightly repeat of the same sentence is how people learn
+ * to filter Driplin's mail.
+ */
+async function raiseUnreadableAlert(
+  supabase: SupabaseClient,
+  orgId: string,
+  property: { id: string; name: string },
+  controller: { id: string; name: string },
+  explanation: string,
+  reason: "never_read" | "stale"
+): Promise<void> {
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const { data: recent } = await supabase
+    .from("alerts")
+    .select("id, details")
+    .eq("property_id", property.id)
+    .eq("type", "controller_unreadable")
+    .gte("created_at", weekAgo);
+
+  const already = (recent ?? []).some(
+    (a) =>
+      (a.details as { controllerId?: string } | null)?.controllerId ===
+      controller.id
+  );
+  if (already) return;
+
+  const message = `${property.name}: ${explanation} Driplin is not checking ${controller.name} until it can read it again.`;
+
+  await supabase.from("compliance_events").insert({
+    org_id: orgId,
+    property_id: property.id,
+    controller_id: controller.id,
+    type: "controller_unreadable",
+    summary: message,
+    details: { controllerId: controller.id, reason },
+  });
+
+  const { data: alert } = await supabase
+    .from("alerts")
+    .insert({
+      org_id: orgId,
+      property_id: property.id,
+      type: "controller_unreadable",
+      // A property nobody is checking is as serious as one in breach:
+      // in both cases the compliance Driplin promised is not happening.
+      severity: "critical",
+      message,
+      details: { controllerId: controller.id, reason },
+    })
+    .select("id, org_id, property_id, type, message, details")
+    .single();
+  if (alert) await dispatchAlertNotifications(supabase, alert);
+}
+
 /** A property_variances row as the rules engine wants it. */
 function toVariance(row: Record<string, unknown>): Variance {
   return {
@@ -155,6 +219,8 @@ export interface OrgComplianceSummary {
   uncertified: number;
   /** Work orders chased because nobody acted on them. */
   chased: number;
+  /** Controllers Driplin could not read, so made no claim about. */
+  unreadable: number;
   errors: string[];
 }
 
@@ -169,6 +235,7 @@ export async function runComplianceForOrg(
     needsManualFix: 0,
     uncertified: 0,
     chased: 0,
+    unreadable: 0,
     errors: [],
   };
 
@@ -209,17 +276,64 @@ export async function runComplianceForOrg(
 
     summary.checked += 1;
 
-    // 1. Refresh our cached copy of the schedule (best effort — a failed
-    //    sync still lets us evaluate the last-known schedule).
-    await syncControllerById(supabase, c.id);
+    // 1. Refresh our cached copy of the schedule. A failed sync still
+    //    lets us evaluate last night's copy -- one flaky request should
+    //    not blank a dashboard -- but only for as long as that copy can
+    //    still be believed. See step 1b.
+    const sync = await syncControllerById(supabase, c.id);
 
     const { data: cached } = await supabase
       .from("cached_schedules")
-      .select("schedule")
+      .select("schedule, fetched_at")
       .eq("controller_id", c.id)
       .single();
     const programs: ScheduleProgram[] =
       (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
+
+    // 1b. Is the cache still worth judging?
+    //
+    // A manual controller is exempt: there is nothing to read, so its
+    // entered schedule is as current as it will ever be and never goes
+    // stale. For everything else, a cache older than the shelf life
+    // means Driplin has lost contact -- a rotated key, revoked access, a
+    // controller off the network -- and must stop claiming to know
+    // anything, rather than reporting the last thing it happened to see.
+    const freshness =
+      c.vendor === "manual"
+        ? ({ usable: true, ageHours: null } as const)
+        : scheduleFreshness((cached?.fetched_at as string | null) ?? null);
+
+    if (!freshness.usable) {
+      summary.unreadable += 1;
+      const vendorLabel = c.vendor as string;
+      const explanation = describeStaleness(freshness, vendorLabel);
+
+      await supabase
+        .from("controllers")
+        .update({
+          // Never "compliant" from a cache Driplin no longer trusts.
+          compliance_status: "unknown",
+          compliance_detail: {
+            unreadable: true,
+            reason: freshness.reason,
+            lastReadAt: (cached?.fetched_at as string | null) ?? null,
+            syncError: sync.ok ? null : sync.error,
+            manualInstructions: [explanation],
+          },
+          compliance_checked_at: new Date().toISOString(),
+        })
+        .eq("id", c.id);
+
+      await raiseUnreadableAlert(
+        supabase,
+        c.org_id,
+        property as { id: string; name: string },
+        c as { id: string; name: string },
+        explanation,
+        freshness.reason
+      );
+      continue;
+    }
 
     // Which meter is this controller on? Its own, if it declares one;
     // otherwise the property's.
@@ -663,11 +777,28 @@ export async function verifyControllerNow(
 
   const { data: cached } = await supabase
     .from("cached_schedules")
-    .select("schedule")
+    .select("schedule, fetched_at")
     .eq("controller_id", controllerId)
     .single();
   const programs: ScheduleProgram[] =
     (cached?.schedule as { programs?: ScheduleProgram[] } | null)?.programs ?? [];
+
+  // The same shelf life as the nightly sweep. Without this, clicking
+  // "I've updated it" on a controller Driplin lost access to weeks ago
+  // would read the frozen cache and cheerfully confirm compliance.
+  const singleFreshness =
+    c.vendor === "manual"
+      ? ({ usable: true, ageHours: null } as const)
+      : scheduleFreshness((cached?.fetched_at as string | null) ?? null);
+  if (!singleFreshness.usable) {
+    return {
+      ...base,
+      ok: false,
+      compliant: null,
+      remainingProblems: [],
+      message: describeStaleness(singleFreshness, c.vendor as string),
+    };
+  }
 
   const meter = meterFor(property, c);
   const digit = meter.digit;

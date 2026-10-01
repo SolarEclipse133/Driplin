@@ -65,7 +65,7 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
   const { data: property } = await supabase
     .from("properties")
     .select(
-      "name, street_number, street_name, city, state, zip, jurisdiction, no_street_address, archived_at, organizations(name), controllers(compliance_status, compliance_checked_at)"
+      "name, street_number, street_name, city, state, zip, jurisdiction, no_street_address, archived_at, organizations(name), controllers(compliance_status, compliance_checked_at, compliance_detail)"
     )
     .eq("id", link.property_id as string)
     .maybeSingle();
@@ -77,11 +77,21 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
   const controllers = Array.isArray(property.controllers) ? property.controllers : [];
   const statuses = controllers.map((c) => c.compliance_status as string);
 
-  const status: BoardView["status"] = property.archived_at
-    ? // Driplin stopped checking, so it claims nothing either way. A
-      // green light on an unmonitored property is the lie this whole
-      // change exists to avoid.
-      "unknown"
+  // A controller Driplin cannot read is not a compliant controller, and
+  // a board is the last audience that should be shown a stale green light.
+  const anyUnreadable = controllers.some(
+    (c) =>
+      (c.compliance_detail as { unreadable?: boolean } | null)?.unreadable ===
+      true
+  );
+
+  // Driplin claims nothing when it is not watching, or cannot see. A
+  // green light on a property nobody is checking is the lie this whole
+  // change exists to avoid, and a board is the last audience to show it to.
+  const claimsNothing = Boolean(property.archived_at) || anyUnreadable;
+
+  const status: BoardView["status"] = claimsNothing
+    ? "unknown"
     : statuses.length === 0
       ? "unknown"
       : statuses.includes("needs_manual_fix") || statuses.includes("violation")
@@ -136,11 +146,13 @@ export async function findBoardView(token: string): Promise<BoardView | null> {
     archivedAt: (property.archived_at as string) ?? null,
     statusLabel: property.archived_at
       ? "No longer monitored by Driplin"
-      : status === "compliant"
-        ? "Compliant with current watering rules"
-        : status === "needs_attention"
-          ? "Needs attention"
-          : "Not yet checked",
+      : anyUnreadable
+        ? "Driplin cannot currently read this property's controller"
+        : status === "compliant"
+          ? "Compliant with current watering rules"
+          : status === "needs_attention"
+            ? "Needs attention"
+            : "Not yet checked",
     jurisdictionName: jurisdiction.name,
     utility: jurisdiction.utility,
     stageName: jurisdiction.stages[stage].name,

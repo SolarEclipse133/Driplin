@@ -20,7 +20,16 @@ import { recheckCompliance } from "./actions";
  * on top so the active restrictions are always auditable.
  */
 
-type PropertyRollup = "compliant" | "violation" | "needs_manual_fix" | "unknown";
+type PropertyRollup =
+  | "compliant"
+  | "violation"
+  | "needs_manual_fix"
+  // Driplin cannot read the controller, so it is making no claim. Kept
+  // separate from "unknown": a lost connection is the customer's to fix
+  // and needs to look like a problem, not like a queue Driplin has not
+  // got to yet.
+  | "unreadable"
+  | "unknown";
 
 const ROLLUP_BADGES: Record<PropertyRollup, { label: string; className: string }> = {
   compliant: { label: "Compliant", className: "bg-green-50 text-green-800" },
@@ -28,6 +37,10 @@ const ROLLUP_BADGES: Record<PropertyRollup, { label: string; className: string }
   needs_manual_fix: {
     label: "Needs manual fix",
     className: "bg-amber-50 text-amber-800",
+  },
+  unreadable: {
+    label: "Not being checked",
+    className: "bg-orange-100 text-orange-900",
   },
   unknown: { label: "Not checked", className: "bg-slate-100 text-slate-600" },
 };
@@ -38,10 +51,16 @@ const SEVERITY_DOTS: Record<string, string> = {
   critical: "bg-red-600",
 };
 
-function rollupFor(statuses: string[]): PropertyRollup {
-  if (statuses.length === 0) return "unknown";
+function rollupFor(
+  controllers: { compliance_status: string | null; unreadable: boolean }[]
+): PropertyRollup {
+  if (controllers.length === 0) return "unknown";
+  const statuses = controllers.map((c) => c.compliance_status);
   if (statuses.includes("needs_manual_fix")) return "needs_manual_fix";
   if (statuses.includes("violation")) return "violation";
+  // Before "compliant", because a property with one good controller and
+  // one Driplin cannot read is not a compliant property.
+  if (controllers.some((c) => c.unreadable)) return "unreadable";
   if (statuses.every((s) => s === "compliant")) return "compliant";
   return "unknown";
 }
@@ -72,7 +91,7 @@ export default async function DashboardPage() {
   const { data: properties } = await supabase
     .from("properties")
     .select(
-      "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status)"
+      "id, name, unit_count, street_number, street_name, city, jurisdiction, controllers(id, name, vendor, compliance_status, compliance_detail)"
     )
     .is("archived_at", null)
     .order("name");
@@ -106,7 +125,14 @@ export default async function DashboardPage() {
     return {
       ...p,
       controllers,
-      rollup: rollupFor(controllers.map((c) => c.compliance_status)),
+      rollup: rollupFor(
+        controllers.map((c) => ({
+          compliance_status: c.compliance_status as string | null,
+          unreadable:
+            (c.compliance_detail as { unreadable?: boolean } | null)
+              ?.unreadable === true,
+        }))
+      ),
     };
   });
   const compliantCount = rows.filter((r) => r.rollup === "compliant").length;

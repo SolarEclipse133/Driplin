@@ -73,6 +73,12 @@ export async function GET(request: NextRequest) {
           (n, r) => n + ((r as { chased?: number }).chased ?? 0),
           0
         ),
+        // Controllers Driplin could not read, so made no claim about. A
+        // number that climbs here means connections are breaking.
+        unreadable: Object.values(complianceRuns).reduce<number>(
+          (n, r) => n + ((r as { unreadable?: number }).unreadable ?? 0),
+          0
+        ),
       },
     });
 
