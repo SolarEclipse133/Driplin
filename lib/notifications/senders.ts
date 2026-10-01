@@ -9,6 +9,8 @@
  * Vercel (see SETUP.md) turns on real sending with no code changes.
  */
 
+import { reportServerError } from "@/lib/observability/report";
+
 export type SendResult =
   | { status: "sent" }
   | { status: "logged" }
@@ -62,13 +64,24 @@ export async function sendSms(to: string, body: string): Promise<SendResult> {
       }
     );
     if (!res.ok) {
-      return {
-        status: "failed",
-        error: explainProviderError("twilio", await res.text()),
-      };
+      const error = explainProviderError("twilio", await res.text());
+      // An alert that fails to send is the worst failure this product has:
+      // the compliance problem is real and nobody has been told. The
+      // recipient is masked to d***@domain on the way out.
+      reportServerError("notification.sms_failed", error, {
+        provider: "twilio",
+        httpStatus: res.status,
+        recipient: to,
+      });
+      return { status: "failed", error };
     }
     return { status: "sent" };
-  } catch {
+  } catch (err) {
+    reportServerError("notification.sms_failed", err, {
+      provider: "twilio",
+      recipient: to,
+      reason: "network",
+    });
     return { status: "failed", error: "Network error reaching Twilio." };
   }
 }
@@ -109,13 +122,21 @@ export async function sendEmail(
       cache: "no-store",
     });
     if (!res.ok) {
-      return {
-        status: "failed",
-        error: explainProviderError("resend", await res.text()),
-      };
+      const error = explainProviderError("resend", await res.text());
+      reportServerError("notification.email_failed", error, {
+        provider: "resend",
+        httpStatus: res.status,
+        recipient: to,
+      });
+      return { status: "failed", error };
     }
     return { status: "sent" };
-  } catch {
+  } catch (err) {
+    reportServerError("notification.email_failed", err, {
+      provider: "resend",
+      recipient: to,
+      reason: "network",
+    });
     return { status: "failed", error: "Network error reaching Resend." };
   }
 }

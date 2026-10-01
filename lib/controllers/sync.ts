@@ -9,6 +9,7 @@ import { getVendorApiKey } from "./credentials";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getController } from "./factory";
 import { ControllerError, ControllerVendor } from "./types";
+import { reportServerError } from "@/lib/observability/report";
 
 export async function syncControllerById(
   supabase: SupabaseClient,
@@ -22,14 +23,38 @@ export async function syncControllerById(
   if (error || !controller) return { ok: false, error: "Controller not found." };
 
   // Vendor API key (demo controllers don't need one).
+  //
+  // Inside its own guard, because this can throw: decryptSecret raises
+  // SecretKeyError when CREDENTIALS_ENCRYPTION_KEY is missing or wrong. It
+  // used to be called before the try below, so that one error escaped
+  // syncControllerById and the whole nightly run with it -- every property
+  // in every organization left unchecked because of one unreadable
+  // credential. A credential Driplin cannot read makes THAT controller
+  // unreadable and nothing more.
   let apiKey: string | undefined;
   if (controller.vendor !== "demo") {
-    apiKey =
-      (await getVendorApiKey(
-        supabase,
-        controller.org_id,
-        controller.vendor
-      )) ?? undefined;
+    try {
+      apiKey =
+        (await getVendorApiKey(
+          supabase,
+          controller.org_id,
+          controller.vendor
+        )) ?? undefined;
+    } catch (err) {
+      reportServerError("controller.credential_unreadable", err, {
+        controllerId: controller.id,
+        vendor: controller.vendor,
+      });
+      await supabase
+        .from("controllers")
+        .update({ status: "error" })
+        .eq("id", controller.id);
+      return {
+        ok: false,
+        error:
+          "Driplin could not read this controller's stored credential. Re-enter the vendor API key in Settings.",
+      };
+    }
   }
 
   try {
@@ -69,6 +94,13 @@ export async function syncControllerById(
       err instanceof ControllerError
         ? err.message
         : "Unexpected error talking to the controller.";
+    // A rotated key or a revoked authorisation shows up here first, and
+    // used to leave nothing behind but a status column.
+    reportServerError("controller.sync_failed", err, {
+      controllerId: controller.id,
+      vendor: controller.vendor,
+      hadApiKey: apiKey !== undefined,
+    });
     return { ok: false, error: message };
   }
 }

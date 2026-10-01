@@ -7,6 +7,10 @@ import {
   isEncrypted,
   SecretKeyError,
 } from "@/lib/crypto/secrets";
+import {
+  reportServerError,
+  reportServerWarning,
+} from "@/lib/observability/report";
 
 /**
  * The ONLY way the application reads or writes a vendor API key.
@@ -95,9 +99,16 @@ export async function getVendorApiKey(
         .update({ api_key: reEncrypted })
         .eq("org_id", orgId)
         .eq("vendor", vendor);
-    } catch {
-      // No key configured yet, or the write was refused. The caller
-      // still gets a working credential; the row is upgraded next time.
+    } catch (err) {
+      // The caller still gets a working credential and the row is upgraded
+      // next time, so this is not an error for the user. It is worth
+      // seeing, though: if it never succeeds, a plaintext row stays
+      // plaintext indefinitely.
+      reportServerWarning(
+        "credentials.upgrade_deferred",
+        err instanceof Error ? err.message : "Could not re-encrypt in place",
+        { orgId, vendor }
+      );
     }
   }
 
@@ -160,8 +171,15 @@ export async function upgradeLegacyCredentials(
         .eq("id", row.id);
       if (writeError) failed += 1;
       else upgraded += 1;
-    } catch {
+    } catch (err) {
       failed += 1;
+      // The sweep is what makes "every credential is encrypted at rest"
+      // true of every row rather than only the ones that get used, so a
+      // row it cannot convert needs to be findable.
+      reportServerError("credentials.upgrade_failed", err, {
+        credentialId: row.id,
+        vendor: row.vendor,
+      });
     }
   }
   return { upgraded, failed, skipped: null };

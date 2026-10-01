@@ -5,6 +5,7 @@ import { runComplianceForOrg } from "@/lib/rules/run-compliance";
 import { upgradeLegacyCredentials } from "@/lib/controllers/credentials";
 import { sendScheduledReports } from "@/lib/reports/send";
 import { startRun, finishRun } from "@/lib/jobs/runs";
+import { reportServerError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 // 60s is the ceiling on Vercel's free (Hobby) plan; raise this after
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ credentials, indicators, complianceRuns, reports });
   } catch (err) {
+    reportServerError("cron.nightly_failed", err, { job: "nightly" });
     // A failed run must still be recorded, or a crash looks exactly
     // like a cron that never fired — and the two need different fixes.
     await finishRun(supabase, runId, {
