@@ -8,7 +8,7 @@ export default async function PropertiesPage() {
   const supabase = await createClient();
   const { data: properties, error } = await supabase
     .from("properties")
-    .select("id, name, street_number, street_name, city, zip, unit_count, no_street_address")
+    .select("id, name, street_number, street_name, city, zip, unit_count, no_street_address, controllers(id, compliance_detail)")
     .is("archived_at", null)
     .order("name");
 
@@ -69,6 +69,26 @@ export default async function PropertiesPage() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                {(() => {
+                  const controllers = Array.isArray(p.controllers)
+                    ? p.controllers
+                    : [];
+                  const readable = controllers.filter(
+                    (c) =>
+                      (c.compliance_detail as { unreadable?: boolean } | null)
+                        ?.unreadable !== true
+                  ).length;
+                  if (readable > 0) return null;
+                  // Not a failing property -- one Driplin knows nothing
+                  // about, which is a different thing and needs saying.
+                  return (
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
+                      {controllers.length === 0
+                        ? "Not monitored"
+                        : "Can't be read"}
+                    </span>
+                  );
+                })()}
                 <span
                   className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800"
                   title="Austin assigns watering days by the last digit of the street number"

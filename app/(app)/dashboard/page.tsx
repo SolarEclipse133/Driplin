@@ -8,6 +8,8 @@ import { EarlyWarningNotes } from "@/components/early-warning-note";
 import { ResponseTimes } from "@/components/response-times";
 import { NotificationWarning } from "@/components/notification-warning";
 import { MonitoringWarning } from "@/components/monitoring-warning";
+import { MonitoringGapNotice } from "@/components/monitoring-gap-notice";
+import { describeGap, monitoringGap } from "@/lib/rules/monitoring-gap";
 import { getMonitoringHealth } from "@/lib/jobs/runs";
 import { getNotificationHealth } from "@/lib/notifications/health";
 import { formatDuration } from "@/lib/rules/benchmarks";
@@ -137,6 +139,24 @@ export default async function DashboardPage() {
   });
   const compliantCount = rows.filter((r) => r.rollup === "compliant").length;
 
+  // What is Driplin actually watching? A property with nothing connected
+  // is not a failing property, it is one Driplin knows nothing about, and
+  // the compliant metric below counts against what can be judged rather
+  // than against everything in the portfolio.
+  const gap = monitoringGap(
+    rows.map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      controllerCount: r.controllers.length,
+      readableControllerCount: r.controllers.filter(
+        (c) =>
+          (c.compliance_detail as { unreadable?: boolean } | null)
+            ?.unreadable !== true
+      ).length,
+    }))
+  );
+  const gapMessage = describeGap(gap);
+
   const benchmarks = await loadBenchmarks(supabase, rows);
 
   // Only show stage banners for cities this portfolio actually has
@@ -154,6 +174,7 @@ export default async function DashboardPage() {
       <StageBanner jurisdictionIds={orgJurisdictions} />
       <MonitoringWarning health={jobHealth} />
       <NotificationWarning health={notificationHealth} />
+      {gapMessage && <MonitoringGapNotice gap={gap} message={gapMessage} />}
       {earlyWarnings.length > 0 && (
         <div className="mt-2">
           <EarlyWarningNotes notes={earlyWarnings} />
@@ -165,8 +186,17 @@ export default async function DashboardPage() {
         <MetricCard label="Properties" value={String(rows.length)} />
         <MetricCard
           label="Compliant"
-          value={`${compliantCount}/${rows.length}`}
-          hint="properties fully compliant"
+          // Against what Driplin can judge, not against the whole
+          // portfolio. "0/40" for forty unconnected properties reads as
+          // forty failures, which is not what is true of any of them.
+          value={
+            gap.monitored === 0 ? "—" : `${compliantCount}/${gap.monitored}`
+          }
+          hint={
+            gap.monitored === rows.length
+              ? "properties fully compliant"
+              : `of ${gap.monitored} Driplin can check`
+          }
         />
         <MetricCard
           label="Est. water saved"
