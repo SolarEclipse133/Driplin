@@ -26,6 +26,8 @@ import { VariancePanel } from "@/components/variance-panel";
 import { addVariance, removeVariance } from "./variance-actions";
 import { describeVariance, varianceStatus } from "@/lib/rules/variance";
 import { centralCalendarDate } from "@/lib/dates/central";
+import { ComplianceHistoryStrip } from "@/components/compliance-history";
+import { complianceHistory, describeHistory } from "@/lib/rules/history";
 import type { Variance, VarianceKind } from "@/lib/rules/variance";
 import {
   addDemoController,
@@ -110,6 +112,7 @@ export default async function PropertyDetailPage({
     { data: vendorLinks },
     { data: openOrders },
     { data: controllers },
+    { data: historyEvents },
   ] = await Promise.all([
     supabase
     .from("property_variances")
@@ -147,7 +150,25 @@ export default async function PropertyDetailPage({
     )
     .eq("property_id", id)
     .order("created_at"),
+    // The period's record for this property, for the day-by-day strip.
+    supabase
+      .from("compliance_events")
+      .select("created_at, type")
+      .eq("property_id", id)
+      .gte("created_at", reportFrom.toISOString()),
   ]);
+
+  // Named for what it is rather than `history`, which shadows the DOM
+  // global of that name -- a missing definition would otherwise resolve to
+  // it silently instead of failing to compile.
+  const complianceRecord = complianceHistory(
+    (historyEvents ?? []).map((e) => ({
+      created_at: e.created_at as string,
+      type: e.type as string,
+    })),
+    centralCalendarDate(reportFrom.getTime()),
+    centralCalendarDate(reportTo.getTime())
+  );
 
   // Any approved variance on this property. A Large Property variance
   // is exactly the case Driplin's customers hit: a common area that
@@ -678,6 +699,13 @@ export default async function PropertyDetailPage({
           )}
         </div>
       ))}
+
+      {/* How this property has actually done, not just how it is now. */}
+      <h2 className="mt-8 text-lg font-semibold">The last 90 days</h2>
+      <ComplianceHistoryStrip
+        history={complianceRecord}
+        summary={describeHistory(complianceRecord)}
+      />
 
       {/* Board report */}
       <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4">

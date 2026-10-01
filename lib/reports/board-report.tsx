@@ -48,6 +48,18 @@ export interface ReportData {
     sourceLink: string | null;
   };
   /**
+   * The period day by day. The unchecked count is included on purpose: a
+   * compliance record with holes in it should say so, rather than letting
+   * a percentage imply days nobody looked at were fine.
+   */
+  history: {
+    summary: string;
+    compliantDays: number;
+    violationDays: number;
+    uncheckedDays: number;
+    longestCompliantRun: number;
+  } | null;
+  /**
    * How Driplin reached its verdict: which utility, stage and published
    * table. A board asked to accept "compliant" is entitled to know
    * compliant with what, and both the Austin and Leander tables once
@@ -203,7 +215,7 @@ function fmtDate(iso: string): string {
 }
 
 export function BoardReport({ data }: { data: ReportData }) {
-  const { property, stats, stage, variance, reasoning } = data;
+  const { property, stats, stage, variance, reasoning, history } = data;
   return (
     <Document
       title={`Driplin compliance report — ${property.name}`}
@@ -275,6 +287,24 @@ export function BoardReport({ data }: { data: ReportData }) {
                 The drought stage has tightened since this variance was
                 approved. {variance.utility} restricts which variances remain
                 valid at stricter stages, so it should be re-confirmed.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {history && (
+          <View style={styles.reasoningBox}>
+            <Text style={styles.reasoningTitle}>Over this period</Text>
+            <Text style={styles.reasoningBody}>{history.summary}</Text>
+            <Text style={styles.reasoningPoint}>
+              • Compliant on {history.compliantDays} day
+              {history.compliantDays === 1 ? "" : "s"}, something wrong on{" "}
+              {history.violationDays}, not checked on {history.uncheckedDays}.
+            </Text>
+            {history.longestCompliantRun > 1 && (
+              <Text style={styles.reasoningPoint}>
+                • Longest unbroken compliant run: {history.longestCompliantRun}{" "}
+                days.
               </Text>
             )}
           </View>

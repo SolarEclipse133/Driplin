@@ -5,6 +5,8 @@ import { downloadPhoto, PDF_EMBEDDABLE_TYPES } from "@/lib/photos/store";
 import type { ReportData } from "./board-report";
 import { describeVariance, varianceStatus } from "@/lib/rules/variance";
 import { explainVerdict, type RulesSnapshot } from "@/lib/rules/explain";
+import { complianceHistory, describeHistory } from "@/lib/rules/history";
+import { centralCalendarDate } from "@/lib/dates/central";
 import type { Variance, VarianceKind } from "@/lib/rules/variance";
 
 /**
@@ -177,6 +179,25 @@ export async function gatherReportData(
     variance: varianceForReport,
     // The rule each controller was judged against. A board reading
     // "compliant" is entitled to know compliant with WHAT.
+    // How the property actually did over the period, with the days
+    // nobody checked reported rather than quietly counted as fine.
+    history: (() => {
+      const h = complianceHistory(
+        all.map((e) => ({
+          created_at: e.created_at as string,
+          type: e.type as string,
+        })),
+        centralCalendarDate(from.getTime()),
+        centralCalendarDate(to.getTime())
+      );
+      return {
+        summary: describeHistory(h),
+        compliantDays: h.compliantDays,
+        violationDays: h.violationDays,
+        uncheckedDays: h.uncheckedDays,
+        longestCompliantRun: h.longestCompliantRun,
+      };
+    })(),
     reasoning: (() => {
       const controllers = Array.isArray(property.controllers)
         ? property.controllers
