@@ -1,5 +1,6 @@
 import type { Weekday } from "@/lib/controllers/types";
 import type { DroughtStage, TimeWindow } from "@/lib/jurisdictions";
+import { daysFromTodayCentral } from "@/lib/dates/central";
 
 /**
  * An approved variance from a utility's watering schedule.
@@ -79,13 +80,16 @@ export interface VarianceStatus {
 
 export const EXPIRY_WARNING_DAYS = 14;
 
-const DAY_MS = 86_400_000;
-
-/** Midnight-anchored day difference, so a variance expiring today is 0. */
+/**
+ * Midnight-anchored day difference, so a variance expiring today is 0.
+ *
+ * "Today" is a CENTRAL date, not a UTC one. Deriving it from UTC made a
+ * variance read as expired from about 7pm on its final day, which would
+ * put a property back on the city's standard schedule -- and flag it as
+ * violating -- while its approval was still perfectly valid.
+ */
 function daysBetween(fromISO: string, to: number): number {
-  const d = Date.parse(`${fromISO.slice(0, 10)}T00:00:00Z`);
-  const today = Date.parse(new Date(to).toISOString().slice(0, 10) + "T00:00:00Z");
-  return Math.round((d - today) / DAY_MS);
+  return daysFromTodayCentral(fromISO, to);
 }
 
 /**

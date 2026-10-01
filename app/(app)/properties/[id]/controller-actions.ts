@@ -16,6 +16,7 @@ import {
 import type { ScheduleProgram } from "@/lib/controllers/types";
 import { saveVendorApiKey } from "@/lib/controllers/credentials";
 import { NOT_YOURS, ownsProperty } from "@/lib/security/ownership";
+import { redirect } from "next/navigation";
 
 export type ConnectFormState = { error: string | null; success: string | null };
 
@@ -90,7 +91,12 @@ export async function connectVendorDevice(
   if (!deviceId) return;
 
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
   // SECURITY: see ownsProperty — RLS checks the new row's own org_id, not
   // the property it points at.
   if (!(await ownsProperty(supabase, propertyId))) return;
@@ -117,7 +123,12 @@ export async function addDemoController(
   _formData: FormData
 ): Promise<void> {
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
   // SECURITY: see ownsProperty — RLS checks the new row's own org_id, not
   // the property it points at.
   if (!(await ownsProperty(supabase, propertyId))) return;
@@ -144,7 +155,12 @@ export async function syncController(formData: FormData): Promise<void> {
   const controllerId = String(formData.get("controller_id") ?? "");
   if (!controllerId) return;
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
   await syncControllerById(supabase, controllerId);
   const propertyId = String(formData.get("property_id") ?? "");
   revalidatePath(`/properties/${propertyId}`);
@@ -154,7 +170,12 @@ export async function removeController(formData: FormData): Promise<void> {
   const controllerId = String(formData.get("controller_id") ?? "");
   if (!controllerId) return;
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
   await supabase.from("controllers").delete().eq("id", controllerId);
   const propertyId = String(formData.get("property_id") ?? "");
   revalidatePath(`/properties/${propertyId}`);

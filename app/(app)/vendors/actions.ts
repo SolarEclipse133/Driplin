@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export type VendorFormState = {
   error: string | null;
@@ -79,7 +80,12 @@ export async function deleteVendor(formData: FormData): Promise<void> {
   const vendorId = String(formData.get("vendor_id") ?? "");
   if (!vendorId) return;
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
   await supabase.from("vendors").delete().eq("id", vendorId);
   revalidatePath("/vendors");
 }
@@ -92,7 +98,12 @@ export async function toggleVendorProperty(formData: FormData): Promise<void> {
   if (!vendorId || !propertyId) return;
 
   const { supabase, orgId } = await requireOrg();
-  if (!orgId) return;
+  if (!orgId) {
+    // The only realistic reason to get here is an expired session. A
+    // button that silently does nothing reads as a broken product; send
+    // them where they can actually recover.
+    redirect("/login");
+  }
 
   if (assigned) {
     await supabase
