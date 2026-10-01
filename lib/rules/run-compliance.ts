@@ -56,6 +56,7 @@ import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { evaluateCompliance } from "./compliance";
 import { varianceStatus, type Variance, type VarianceKind } from "./variance";
 import { decideChase } from "./work-order-chase";
+import { resolvableTypes } from "@/lib/alerts/nature";
 import {
   describeStaleness,
   scheduleFreshness,
@@ -190,6 +191,31 @@ async function raiseUnreadableAlert(
     .select("id, org_id, property_id, type, message, details")
     .single();
   if (alert) await dispatchAlertNotifications(supabase, alert);
+}
+
+/**
+ * Close the tasks a controller's current state has settled.
+ *
+ * Driplin closing its own alerts is the point of this. Expecting somebody
+ * to tidy up after a problem that fixed itself is exactly how an alert
+ * queue turns into wallpaper nobody reads.
+ */
+async function resolveSettledAlerts(
+  supabase: SupabaseClient,
+  propertyId: string,
+  outcome: { compliant: boolean | null; readable: boolean },
+  reason: string
+): Promise<void> {
+  const types = resolvableTypes(outcome);
+  if (types.length === 0) return;
+
+  await supabase
+    .from("alerts")
+    .update({ resolved_at: new Date().toISOString(), resolved_reason: reason })
+    .eq("property_id", propertyId)
+    .in("type", types)
+    .is("resolved_at", null)
+    .eq("acknowledged", false);
 }
 
 /** A property_variances row as the rules engine wants it. */
@@ -348,6 +374,8 @@ export async function runComplianceForOrg(
         })
         .eq("id", c.id);
 
+      // Nothing is settled by being unable to read it: knowing nothing is
+      // not grounds for closing somebody's outstanding task.
       await raiseUnreadableAlert(
         supabase,
         c.org_id,
@@ -473,6 +501,15 @@ export async function runComplianceForOrg(
           compliance_checked_at: new Date().toISOString(),
         })
         .eq("id", c.id);
+      // Whatever was outstanding about this property not complying is no
+      // longer true -- including a work order, because the work is
+      // evidently done whether or not anyone marked it.
+      await resolveSettledAlerts(
+        supabase,
+        property.id,
+        { compliant: true, readable: true },
+        "The property complies again"
+      );
       continue;
     }
 
@@ -575,6 +612,12 @@ export async function runComplianceForOrg(
         outcome: "corrected",
         instructions: [],
       });
+      await resolveSettledAlerts(
+        supabase,
+        property.id,
+        { compliant: true, readable: true },
+        "Driplin corrected the schedule automatically"
+      );
       if (correctionAlert && !options.digestAlerts)
         await dispatchAlertNotifications(supabase, correctionAlert);
     } catch (err) {

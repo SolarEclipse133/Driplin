@@ -17,6 +17,8 @@ import { getNotificationHealth } from "@/lib/notifications/health";
 import { formatDuration } from "@/lib/rules/benchmarks";
 import { loadBenchmarks } from "@/lib/rules/benchmark-data";
 import { recheckCompliance } from "./actions";
+import { alertNature } from "@/lib/alerts/nature";
+import { acknowledgeOwnAlert } from "./alert-actions";
 
 /**
  * Portfolio dashboard: summary metric cards, per-property compliance
@@ -109,13 +111,15 @@ export default async function DashboardPage() {
     .is("archived_at", null)
     .order("name"),
     supabase
-    .from("alerts")
-    .select("id")
-    .eq("acknowledged", false)
-    .not("org_id", "is", null),
+      .from("alerts")
+      .select("id, type, severity, message, created_at")
+      .eq("acknowledged", false)
+      .is("resolved_at", null)
+      .not("org_id", "is", null)
+      .order("created_at", { ascending: false }),
     supabase
     .from("alerts")
-    .select("id, message, severity, acknowledged, created_at")
+    .select("id, type, message, severity, acknowledged, resolved_at, created_at")
     .not("org_id", "is", null)
     .order("created_at", { ascending: false })
     .limit(8),
@@ -168,6 +172,13 @@ export default async function DashboardPage() {
 
   // Has anything ever actually been checked? Until it has, the account is
   // still being set up, however many properties are in it.
+  // "Needs you" is not the same as "something happened". Twelve of the
+  // seventeen open alerts on a real account were announcements that
+  // Driplin had already corrected a schedule.
+  const openTasks = (openAlerts ?? []).filter(
+    (a) => alertNature(a.type as string, a.severity as "info") === "task"
+  );
+
   const everChecked = rows.some((r) =>
     r.controllers.some((c) => c.compliance_checked_at !== null)
   );
@@ -227,9 +238,9 @@ export default async function DashboardPage() {
           hint="gallons/week from schedule corrections"
         />
         <MetricCard
-          label="Open alerts"
-          value={String(openAlerts?.length ?? 0)}
-          hint="unacknowledged"
+          label="Needs you"
+          value={String(openTasks.length)}
+          hint={openTasks.length === 0 ? "nothing outstanding" : "waiting on someone"}
         />
         <MetricCard
           label="Avg. response"
@@ -302,12 +313,49 @@ export default async function DashboardPage() {
       </p>
       <ResponseTimes summary={benchmarks} />
 
-      {/* Recent alerts feed */}
-      <h2 className="mt-8 text-lg font-semibold">Recent alerts</h2>
+      {/* Things waiting on a person, and a way to say they are done. */}
+      {openTasks.length > 0 && (
+        <>
+          <h2 className="mt-8 text-lg font-semibold">Needs you</h2>
+          <ul className="mt-3 space-y-2">
+            {openTasks.map((a) => (
+              <li
+                key={a.id}
+                className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-amber-950">{a.message}</p>
+                  <p className="mt-0.5 text-xs text-amber-800">
+                    {new Date(a.created_at as string).toLocaleString("en-US", {
+                      timeZone: "America/Chicago",
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                </div>
+                {/* Driplin closes these itself once the problem clears, so
+                    this is for the ones it cannot see the end of. */}
+                <form action={acknowledgeOwnAlert}>
+                  <input type="hidden" name="alert_id" value={a.id as string} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                  >
+                    Mark as handled
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* Everything that happened, including what Driplin settled itself. */}
+      <h2 className="mt-8 text-lg font-semibold">Recent activity</h2>
       {(recentAlerts?.length ?? 0) === 0 ? (
         <p className="mt-2 text-sm text-slate-500">
-          No alerts yet — they appear here when a property goes out of
-          compliance.
+          Nothing yet. Checks, corrections and anything needing attention
+          appear here.
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
@@ -328,7 +376,11 @@ export default async function DashboardPage() {
                     dateStyle: "medium",
                     timeStyle: "short",
                   })}
-                  {a.acknowledged ? " · acknowledged" : ` · ${a.severity}`}
+                  {a.resolved_at
+                    ? " · resolved by Driplin"
+                    : a.acknowledged
+                      ? " · marked as handled"
+                      : ` · ${a.severity}`}
                 </p>
               </div>
             </li>
