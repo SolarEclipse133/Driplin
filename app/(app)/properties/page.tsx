@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getWateringDigit } from "@/lib/rules/address";
+import { ImportProperties } from "@/components/import-properties";
+import { importProperties } from "./import-actions";
 
 export default async function PropertiesPage() {
   const supabase = await createClient();
@@ -20,14 +22,17 @@ export default async function PropertiesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Properties</h1>
-        <Link
-          href="/properties/new"
-          className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
-        >
-          Add property
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <ImportProperties action={importProperties} />
+          <Link
+            href="/properties/new"
+            className="rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+          >
+            Add property
+          </Link>
+        </div>
       </div>
 
       {error && (
