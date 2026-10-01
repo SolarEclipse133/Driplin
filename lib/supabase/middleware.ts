@@ -19,9 +19,18 @@ const PUBLIC_PATHS = [
   "/fix/",
   "/board/",
   "/join/",
-  // Password recovery: by definition reached without a session.
-  "/forgot-password",
 ];
+
+/**
+ * Reachable whether or not you are signed in.
+ *
+ * Password recovery is usually reached without a session, but not always:
+ * someone already signed in may want to change their password, or may be
+ * helping a colleague on a shared machine. Treating these as merely
+ * "public" bounced a signed-in visitor to the dashboard, so the form could
+ * not be opened at all by the people most likely to be testing it.
+ */
+const PUBLIC_EITHER_WAY = ["/forgot-password", "/reset-password"];
 
 /**
  * Paths that must run whatever the session state is.
@@ -79,7 +88,14 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   // "/" is the public marketing page; exact match only (startsWith("/")
   // would make everything public).
-  const isPublic = path === "/" || PUBLIC_PATHS.some((p) => path.startsWith(p));
+  const isPublic =
+    path === "/" ||
+    PUBLIC_PATHS.some((p) => path.startsWith(p)) ||
+    PUBLIC_EITHER_WAY.some((p) => path.startsWith(p));
+
+  // Allowed in both directions: never bounced for having a session, and
+  // never bounced for lacking one.
+  const eitherWay = PUBLIC_EITHER_WAY.some((p) => path.startsWith(p));
 
   if (ALWAYS_ALLOWED.some((p) => path.startsWith(p))) {
     return supabaseResponse;
@@ -92,7 +108,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && isPublic) {
+  if (user && isPublic && !eitherWay) {
     // Already logged in → no reason to see login/signup.
     const dashUrl = request.nextUrl.clone();
     dashUrl.pathname = "/dashboard";

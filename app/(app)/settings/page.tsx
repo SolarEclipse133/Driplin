@@ -9,6 +9,7 @@ import { emailConfigured, smsConfigured } from "@/lib/notifications/health";
 import { PlanPanel } from "@/components/plan-panel";
 import { getEntitlements } from "@/lib/billing/subscription";
 import { getBillingProvider } from "@/lib/billing/provider";
+import { ChangePassword } from "@/components/change-password";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   sent: { label: "Sent", className: "bg-green-50 text-green-800" },
@@ -96,6 +97,12 @@ export default async function SettingsPage() {
           </div>
         </>
       )}
+
+      <h2 className="mt-10 text-lg font-semibold">Your password</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Changing it here is immediate and needs no email.
+      </p>
+      <ChangePassword />
 
       <h2 className="mt-10 text-lg font-semibold">Your team</h2>
       <TeamPanel
