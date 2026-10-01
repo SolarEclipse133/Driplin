@@ -13,7 +13,26 @@ import { NextResponse, type NextRequest } from "next/server";
 // /board/<token> is the HOA board's no-login read-only view; like
 // /fix/ it authenticates with the token in the URL and shows exactly
 // one property.
-const PUBLIC_PATHS = ["/login", "/signup", "/fix/", "/board/", "/join/"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/fix/",
+  "/board/",
+  "/join/",
+  // Password recovery: by definition reached without a session.
+  "/forgot-password",
+];
+
+/**
+ * Paths that must run whatever the session state is.
+ *
+ * /auth/callback turns an emailed one-time code into a session. Treating
+ * it as merely "public" would break it for anyone already signed in: the
+ * rule below sends a signed-in visitor off a public path to the dashboard,
+ * so a logged-in person clicking a password-reset link would be bounced
+ * before the code was ever exchanged.
+ */
+const ALWAYS_ALLOWED = ["/auth/"];
 
 export async function updateSession(request: NextRequest) {
   // Cron endpoints authenticate with CRON_SECRET inside the route
@@ -61,6 +80,10 @@ export async function updateSession(request: NextRequest) {
   // "/" is the public marketing page; exact match only (startsWith("/")
   // would make everything public).
   const isPublic = path === "/" || PUBLIC_PATHS.some((p) => path.startsWith(p));
+
+  if (ALWAYS_ALLOWED.some((p) => path.startsWith(p))) {
+    return supabaseResponse;
+  }
 
   if (!user && !isPublic) {
     // Not logged in and visiting a protected page → send to login.

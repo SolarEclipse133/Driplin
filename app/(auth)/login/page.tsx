@@ -2,8 +2,36 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+const LINK_ERRORS: Record<string, string> = {
+  link_invalid: "That link was incomplete. Request a new one below.",
+  link_expired:
+    "That link has expired, been used already, or was opened in a different browser than the one that asked for it. Request a new one below.",
+};
+
+/**
+ * Why /auth/callback sent someone back here, if it did.
+ *
+ * Split out and wrapped in Suspense below: useSearchParams opts a route
+ * out of static prerendering unless it sits behind a boundary, and this
+ * page is otherwise static.
+ */
+function LinkErrorNotice() {
+  const searchParams = useSearchParams();
+  const message = LINK_ERRORS[searchParams.get("error") ?? ""] ?? null;
+  if (!message) return null;
+  return (
+    <p
+      role="alert"
+      className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      {message}
+    </p>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -55,6 +83,10 @@ export default function LoginPage() {
     <>
       <h2 className="text-xl font-semibold">Log in</h2>
 
+      <Suspense fallback={null}>
+        <LinkErrorNotice />
+      </Suspense>
+
       <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
         <div>
           <label htmlFor="email" className="block text-sm font-medium">
@@ -102,6 +134,15 @@ export default function LoginPage() {
           {submitting ? "Logging in…" : "Log in"}
         </button>
       </form>
+
+      <p className="mt-4 text-center text-sm">
+        <Link
+          href="/forgot-password"
+          className="font-medium text-sky-700 hover:underline"
+        >
+          Forgot your password?
+        </Link>
+      </p>
 
       <p className="mt-4 text-center text-sm text-slate-600">
         New to Driplin?{" "}
