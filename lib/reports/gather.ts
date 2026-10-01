@@ -4,6 +4,7 @@ import { DroughtStage, getJurisdiction } from "@/lib/jurisdictions";
 import { downloadPhoto, PDF_EMBEDDABLE_TYPES } from "@/lib/photos/store";
 import type { ReportData } from "./board-report";
 import { describeVariance, varianceStatus } from "@/lib/rules/variance";
+import { explainVerdict, type RulesSnapshot } from "@/lib/rules/explain";
 import type { Variance, VarianceKind } from "@/lib/rules/variance";
 
 /**
@@ -22,7 +23,7 @@ export async function gatherReportData(
   const { data: property } = await supabase
     .from("properties")
     .select(
-      "id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, organizations(name), controllers(compliance_status)"
+      "id, name, street_number, street_name, city, state, zip, unit_count, jurisdiction, organizations(name), controllers(compliance_status, compliance_detail)"
     )
     .eq("id", propertyId)
     .single();
@@ -174,6 +175,19 @@ export async function gatherReportData(
       sourceLink: stageStatus?.source_link ?? null,
     },
     variance: varianceForReport,
+    // The rule each controller was judged against. A board reading
+    // "compliant" is entitled to know compliant with WHAT.
+    reasoning: (() => {
+      const controllers = Array.isArray(property.controllers)
+        ? property.controllers
+        : [];
+      for (const c of controllers) {
+        const snapshot = (c.compliance_detail as { rules?: RulesSnapshot } | null)
+          ?.rules;
+        if (snapshot) return explainVerdict(snapshot);
+      }
+      return null;
+    })(),
     photos,
     generatedAt: new Date().toISOString(),
   };

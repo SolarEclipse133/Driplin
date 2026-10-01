@@ -37,6 +37,8 @@ import {
   saveVendorKey,
   syncController,
 } from "./controller-actions";
+import { VerdictReasoning } from "@/components/verdict-reasoning";
+import { explainVerdict, type RulesSnapshot } from "@/lib/rules/explain";
 
 function formatDays(days: ScheduleProgram["days"]): string {
   if (days.length === 0) return "No days set";
@@ -494,6 +496,22 @@ export default async function PropertyDetailPage({
                   </ol>
                 </div>
               )}
+              {/* The basis for the verdict above. A compliance product
+                  that will not show its working is asking to be taken on
+                  faith, which is the opposite of what it is sold for. */}
+              {(() => {
+                const snapshot = (
+                  c.compliance_detail as { rules?: RulesSnapshot } | null
+                )?.rules;
+                if (!snapshot) return null;
+                return (
+                  <VerdictReasoning
+                    explanation={explainVerdict(snapshot)}
+                    checkedAt={c.compliance_checked_at as string | null}
+                  />
+                );
+              })()}
+
               {/* An unconnected controller's schedule is somebody's word,
                   so it has to be correctable. */}
               {c.vendor === "manual" && (

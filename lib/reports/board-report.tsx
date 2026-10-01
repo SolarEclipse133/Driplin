@@ -48,6 +48,17 @@ export interface ReportData {
     sourceLink: string | null;
   };
   /**
+   * How Driplin reached its verdict: which utility, stage and published
+   * table. A board asked to accept "compliant" is entitled to know
+   * compliant with what, and both the Austin and Leander tables once
+   * shipped wrong for commercial accounts.
+   */
+  reasoning: {
+    headline: string;
+    points: string[];
+    caveat: string | null;
+  } | null;
+  /**
    * An approved variance in force over the period, if any.
    *
    * A board reading "compliant" while the property watered on a day the
@@ -104,6 +115,18 @@ const styles = StyleSheet.create({
   },
   statLabel: { fontSize: 7.5, color: "#64748b", textTransform: "uppercase" },
   statValue: { fontSize: 16, fontFamily: "Helvetica-Bold", marginTop: 3 },
+  reasoningBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 6,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  reasoningTitle: { fontSize: 10, fontWeight: 700, marginBottom: 4 },
+  reasoningBody: { fontSize: 9, color: "#334155", marginBottom: 4 },
+  reasoningPoint: { fontSize: 9, color: "#475569", marginBottom: 2 },
+  reasoningCaveat: { fontSize: 9, color: "#9a3412", marginTop: 4 },
   varianceBox: {
     marginTop: 10,
     padding: 10,
@@ -180,7 +203,7 @@ function fmtDate(iso: string): string {
 }
 
 export function BoardReport({ data }: { data: ReportData }) {
-  const { property, stats, stage, variance } = data;
+  const { property, stats, stage, variance, reasoning } = data;
   return (
     <Document
       title={`Driplin compliance report — ${property.name}`}
@@ -253,6 +276,21 @@ export function BoardReport({ data }: { data: ReportData }) {
                 approved. {variance.utility} restricts which variances remain
                 valid at stricter stages, so it should be re-confirmed.
               </Text>
+            )}
+          </View>
+        )}
+
+        {reasoning && (
+          <View style={styles.reasoningBox}>
+            <Text style={styles.reasoningTitle}>How this was judged</Text>
+            <Text style={styles.reasoningBody}>{reasoning.headline}</Text>
+            {reasoning.points.map((point, i) => (
+              <Text key={i} style={styles.reasoningPoint}>
+                • {point}
+              </Text>
+            ))}
+            {reasoning.caveat && (
+              <Text style={styles.reasoningCaveat}>{reasoning.caveat}</Text>
             )}
           </View>
         )}
