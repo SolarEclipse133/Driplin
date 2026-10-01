@@ -8,17 +8,44 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail, sendSms } from "./senders";
 import { recipientsFor } from "./recipients";
 
+/**
+ * Every kind of alert Driplin sends.
+ *
+ * Kept in one place and used as the key of SUBJECTS below, so adding a
+ * kind without giving it a subject line is a type error rather than an
+ * email with no subject. It was the latter: the alerts added for lapsing
+ * variances, unanswered work orders and unreadable controllers all
+ * reached Resend with `subject: undefined`, because rows read back from
+ * Supabase are typed loosely enough to slip past this.
+ */
+export type AlertType =
+  | "violation"
+  | "push_failed"
+  | "lcra_threshold"
+  | "early_warning"
+  | "variance_expiring"
+  | "work_order_stale"
+  | "controller_unreadable"
+  | "stage_change";
+
 interface AlertRow {
   id: string;
   org_id: string | null;
   /** Used to route the alert to whoever is responsible for it. */
   property_id?: string | null;
-  type: "violation" | "push_failed" | "lcra_threshold";
+  type: AlertType | string;
   message: string;
   details?: unknown;
+  /** Overrides the subject line, for an alert that composes its own. */
+  subject?: string;
 }
 
 function emailBodyFor(alert: AlertRow): string {
+  // An alert that composed its own body keeps it. A stage-change digest
+  // is a written message, not a one-line alert with steps appended.
+  const own = (alert.details as { emailBody?: string } | null)?.emailBody;
+  if (own) return `${own}\n\n— Driplin drought compliance`;
+
   const lines = [alert.message, ""];
   const instructions = (
     alert.details as { manualInstructions?: string[] } | null
@@ -32,11 +59,25 @@ function emailBodyFor(alert: AlertRow): string {
   return lines.join("\n");
 }
 
-const SUBJECTS: Record<AlertRow["type"], string> = {
+const SUBJECTS: Record<AlertType, string> = {
   violation: "Driplin: watering schedule corrected",
   push_failed: "Driplin: property needs a manual schedule fix",
   lcra_threshold: "Driplin admin: LCRA reading needs stage verification",
+  early_warning: "Driplin admin: water supply approaching a threshold",
+  variance_expiring: "Driplin: a watering variance is about to expire",
+  work_order_stale: "Driplin: a work order has not been acted on",
+  controller_unreadable: "Driplin: a property is not being checked",
+  stage_change: "Driplin: your city has changed its watering rules",
 };
+
+/** Never send an email with no subject, whatever arrives here. */
+function subjectFor(alert: AlertRow): string {
+  if (alert.subject) return alert.subject;
+  return (
+    SUBJECTS[alert.type as AlertType] ??
+    "Driplin: your properties need attention"
+  );
+}
 
 /**
  * For org alerts: notify every member of the org (email always, SMS if
@@ -47,7 +88,7 @@ export async function dispatchAlertNotifications(
   supabase: SupabaseClient,
   alert: AlertRow
 ): Promise<void> {
-  const subject = SUBJECTS[alert.type];
+  const subject = subjectFor(alert);
   const emailBody = emailBodyFor(alert);
   // SMS must stay short.
   const smsBody = `Driplin: ${alert.message}`.slice(0, 320);

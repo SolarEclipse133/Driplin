@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getJobHealth } from "@/lib/jobs/runs";
+import { cronConfig, getJobHealth } from "@/lib/jobs/runs";
 import { STALE_AFTER_HOURS, type JobHealth } from "@/lib/jobs/health";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -15,6 +15,14 @@ import { acknowledgeAlert, confirmStage, pullIndicatorNow ,
 } from "./actions";
 import { AdminPlans, type OrgPlanRow } from "@/components/admin-plans";
 
+/**
+ * Confirming a stage now re-checks every organization with property in
+ * that city and writes to each of them, which is network-bound work
+ * inside a request. 60s is Vercel's Hobby ceiling; organizations beyond
+ * the inline cap are deferred to the nightly run and reported as such.
+ */
+export const maxDuration = 60;
+
 function centralTime(iso: string | null | undefined): string {
   if (!iso) return "never";
   return new Date(iso).toLocaleString("en-US", {
@@ -24,7 +32,13 @@ function centralTime(iso: string | null | undefined): string {
   });
 }
 
-function NightlyRunPanel({ health }: { health: JobHealth }) {
+function NightlyRunPanel({
+  health,
+  config,
+}: {
+  health: JobHealth;
+  config: { secretSet: boolean; adminKeySet: boolean };
+}) {
   const tone = health.neverRun
     ? "border-slate-200 bg-slate-50 text-slate-700"
     : health.stale
@@ -34,7 +48,29 @@ function NightlyRunPanel({ health }: { health: JobHealth }) {
   return (
     <div className={`mt-3 rounded-xl border p-4 text-sm ${tone}`}>
       {health.neverRun ? (
-        <p>The nightly job has not run yet on this deployment.</p>
+        <div>
+          <p>The nightly job has not run yet on this deployment.</p>
+          {/* "Never run" is ambiguous on its own: the schedule may simply
+              not have come round, or the job may be failing to
+              authenticate before it can record anything. Name the two. */}
+          {!config.secretSet || !config.adminKeySet ? (
+            <p className="mt-2 font-semibold text-red-900">
+              It also cannot authenticate itself:{" "}
+              {!config.secretSet && "CRON_SECRET is not set"}
+              {!config.secretSet && !config.adminKeySet && " and "}
+              {!config.adminKeySet && "SUPABASE_SERVICE_ROLE_KEY is not set"}
+              . Until that is fixed in Vercel (and the project redeployed),
+              the job will be rejected before it can record anything.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs opacity-80">
+              Its credentials are configured, so this is expected until the
+              next scheduled run. If it is still saying this a day after the
+              schedule should have fired, check CRON_SECRET in Vercel matches
+              what the cron sends.
+            </p>
+          )}
+        </div>
       ) : health.stale ? (
         <p className="font-semibold">
           {health.lastSuccessAt
@@ -135,7 +171,7 @@ export default async function AdminPage() {
       {/* Is Driplin itself still running? Above the alerts, because a
           stopped job means the alert list below is stale too. */}
       <h2 className="mt-8 text-lg font-semibold">Nightly check</h2>
-      <NightlyRunPanel health={jobHealth} />
+      <NightlyRunPanel health={jobHealth} config={cronConfig()} />
 
       {/* Internal alerts across all cities */}
       <h2 className="mt-8 text-lg font-semibold">Internal alerts</h2>

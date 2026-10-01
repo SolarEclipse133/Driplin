@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { runIndicatorCheck } from "@/lib/indicators/check";
-import { runComplianceForOrg } from "@/lib/rules/run-compliance";
+import { notifyStageChange } from "@/lib/rules/notify-stage-change";
 import {
   ALL_STAGES,
   DroughtStage,
@@ -91,6 +91,15 @@ export async function confirmStage(
     };
   }
 
+  // What it was, read before overwriting it, so the notice can say
+  // "moved from Stage 1 to Stage 2" rather than just announcing a stage.
+  const { data: before } = await supabase
+    .from("drought_stage_status")
+    .select("current_stage")
+    .eq("jurisdiction", jurisdiction.id)
+    .maybeSingle();
+  const previousStage = (before?.current_stage ?? null) as DroughtStage | null;
+
   const { data: updated, error } = await supabase
     .from("drought_stage_status")
     .update({
@@ -142,7 +151,25 @@ export async function confirmStage(
     }
   }
 
-  const summary = await runComplianceForOrg(supabase, admin.org_id);
+  // Re-check every organization that has property in this city, now,
+  // rather than leaving them until the nightly run.
+  //
+  // This is the highest-stakes event in the product: the legal watering
+  // days for a whole city can change at once. Until now only the
+  // confirming admin's own org was re-checked and everyone else waited up
+  // to a day, learning about it from a scatter of individual violation
+  // alerts with nothing saying why they all arrived together.
+  const previousStageName =
+    previousStage === null ? null : jurisdiction.stages[previousStage].name;
+  const notified = await notifyStageChange(
+    supabase,
+    jurisdiction,
+    stage,
+    previousStageName,
+    url.toString(),
+    admin.org_id
+  );
+  const summary = notified.ownSummary;
 
   revalidatePath("/admin");
   revalidatePath("/dashboard");
@@ -154,7 +181,7 @@ export async function confirmStage(
 
   return {
     error: null,
-    success: `${jurisdiction.name} is now confirmed at ${jurisdiction.stages[stage].name}. Compliance re-run for your org: ${summary.checked} controller(s) checked, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix${summary.uncertified > 0 ? `, ${summary.uncertified} not evaluated (city schedule unconfirmed)` : ""}. Other orgs update on the nightly run.${unverifiedNote}`,
+    success: `${jurisdiction.name} is now confirmed at ${jurisdiction.stages[stage].name}. Re-checked ${notified.orgsChecked} organization(s) with property there and told each one what changed: ${summary.checked} controller(s) checked in yours, ${summary.corrected} corrected, ${summary.needsManualFix} need a manual fix${summary.uncertified > 0 ? `, ${summary.uncertified} not evaluated (city schedule unconfirmed)` : ""}.${notified.deferred > 0 ? ` ${notified.deferred} further organization(s) were left for the nightly run to keep this request within its time budget.` : ""}${unverifiedNote}`,
   };
 }
 

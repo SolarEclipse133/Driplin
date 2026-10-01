@@ -221,12 +221,35 @@ export interface OrgComplianceSummary {
   chased: number;
   /** Controllers Driplin could not read, so made no claim about. */
   unreadable: number;
+  /**
+   * What this run changed, per property, for a caller that wants to
+   * summarise it in one message rather than many.
+   */
+  affected: {
+    propertyName: string;
+    controllerName: string;
+    outcome: "corrected" | "needs_manual_fix" | "unreadable" | "uncertified";
+    instructions: string[];
+  }[];
   errors: string[];
 }
 
 export async function runComplianceForOrg(
   supabase: SupabaseClient,
-  orgId: string
+  orgId: string,
+  /**
+   * Hold back the per-controller notifications.
+   *
+   * On a stage change every property in a city is re-judged at once, from
+   * one cause. Sending a separate message per controller would put forty
+   * alerts in somebody's inbox for a single event -- which is how people
+   * learn to filter Driplin's mail, and then miss the one that matters.
+   *
+   * The alerts are still RECORDED either way; only the sending is held,
+   * so the caller can post one digest instead. Off by default: a nightly
+   * run finds unrelated problems and each deserves its own message.
+   */
+  options: { digestAlerts?: boolean } = {}
 ): Promise<OrgComplianceSummary> {
   const summary: OrgComplianceSummary = {
     checked: 0,
@@ -237,6 +260,7 @@ export async function runComplianceForOrg(
     chased: 0,
     unreadable: 0,
     errors: [],
+    affected: [],
   };
 
   // Confirmed stage per city — a portfolio can span jurisdictions.
@@ -540,7 +564,13 @@ export async function runComplianceForOrg(
         })
         .select("id, org_id, property_id, type, message, details")
         .single();
-      if (correctionAlert)
+      summary.affected.push({
+        propertyName: property.name as string,
+        controllerName: c.name as string,
+        outcome: "corrected",
+        instructions: [],
+      });
+      if (correctionAlert && !options.digestAlerts)
         await dispatchAlertNotifications(supabase, correctionAlert);
     } catch (err) {
       // 4. Push failed or unsupported → manual-fallback mode.
@@ -584,7 +614,14 @@ export async function runComplianceForOrg(
         })
         .select("id, org_id, property_id, type, message, details")
         .single();
-      if (manualAlert) await dispatchAlertNotifications(supabase, manualAlert);
+      summary.affected.push({
+        propertyName: property.name as string,
+        controllerName: c.name as string,
+        outcome: "needs_manual_fix",
+        instructions: result.manualInstructions,
+      });
+      if (manualAlert && !options.digestAlerts)
+        await dispatchAlertNotifications(supabase, manualAlert);
     }
   }
 

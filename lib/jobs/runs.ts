@@ -103,3 +103,26 @@ export async function getJobHealth(
     now
   );
 }
+
+/**
+ * Can the nightly job even authenticate itself?
+ *
+ * The heartbeat has one blind spot: the cron route checks CRON_SECRET and
+ * builds its admin client BEFORE recording anything, so a wrong secret or
+ * a missing service-role key produces no record at all -- which looks
+ * exactly like a cron that never fired, the very distinction the
+ * heartbeat exists to draw.
+ *
+ * Recording unauthenticated requests would be worse: anyone who found the
+ * URL could fill the table. So instead the admin panel reports whether
+ * the job COULD authenticate, which turns "never run" from a puzzle into
+ * one of two specific things to check.
+ *
+ * Returns presence only. No secret value goes anywhere near a response.
+ */
+export function cronConfig(): { secretSet: boolean; adminKeySet: boolean } {
+  return {
+    secretSet: (process.env.CRON_SECRET ?? "").length > 0,
+    adminKeySet: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").length > 0,
+  };
+}
